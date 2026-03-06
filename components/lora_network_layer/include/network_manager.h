@@ -22,8 +22,11 @@ struct NetworkConfig {
 };
 
 /**
- * Orchestrator: ties together all network-layer components and spawns
- * two FreeRTOS tasks (RX processing and forwarding timer).
+ * @brief Coordinates the network-layer pipeline and runtime tasks.
+ *
+ * The manager wires the link adapter, location provider, duplicate filter,
+ * routing engine, and forwarding queue together. It runs two FreeRTOS tasks:
+ * one for RX processing and one for forwarding-timeout handling.
  */
 class NetworkManager {
 public:
@@ -32,23 +35,49 @@ public:
                                              const uint8_t* payload,
                                              size_t payload_len)>;
 
-    NetworkManager(ILinkLayer& link, ILocationProvider& loc,
-                   const NetworkConfig& cfg);
+    /**
+     * @brief Construct a network manager instance.
+     *
+     * @param link Link-layer interface used for TX/RX operations.
+     * @param loc Location provider used for routing and metadata updates.
+     * @param cfg Runtime capacities and queue sizes.
+     */
+    NetworkManager(ILinkLayer& link, ILocationProvider& loc, const NetworkConfig& cfg);
+
+    /**
+     * @brief Destroy the manager and release internal RTOS resources.
+     */
     ~NetworkManager();
 
     NetworkManager(const NetworkManager&) = delete;
     NetworkManager& operator=(const NetworkManager&) = delete;
 
-    /** Spawn RX and forwarding tasks. Call once after construction. */
+    /**
+     * @brief Spawn RX and forwarding tasks.
+     *
+     * Call once after construction.
+     */
     void start();
 
-    /** Register the callback for messages delivered to this node. */
+    /**
+     * @brief Register the callback for messages delivered to this node.
+     *
+     * @param cb Application callback invoked for delivered payloads.
+     */
     void setAppRxCallback(AppRxCallback cb);
 
     /**
-     * Originate a new network-layer message.
+     * @brief Originate a new network-layer message.
      *
-     * @return 0 on success, negative on error.
+     * @param priority Priority class encoded in the outgoing header.
+     * @param mode Propagation mode (omni-directional or directional).
+     * @param target_heading Directional target heading in 0.01 degrees.
+     * @param max_hops Maximum number of relays allowed for this message.
+     * @param max_distance_m Maximum propagation distance from origin in meters.
+     * @param lifetime_s Time-to-live for the message in seconds.
+     * @param payload Application payload bytes to transmit.
+     * @param payload_len Number of payload bytes in @p payload.
+     * @return 0 on success, negative value on error.
      */
     int sendMessage(Priority priority, PropagationMode mode,
                     uint16_t target_heading, uint8_t max_hops,
