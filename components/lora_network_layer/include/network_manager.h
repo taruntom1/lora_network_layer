@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <atomic>
 #include <functional>
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -51,7 +52,7 @@ public:
      */
     int sendMessage(Priority priority, PropagationMode mode,
                     uint16_t target_heading, uint8_t max_hops,
-                    uint16_t max_dist_m, uint16_t lifetime_s,
+                    uint16_t max_distance_m, uint16_t lifetime_s,
                     const uint8_t* payload, size_t payload_len);
 
 private:
@@ -66,7 +67,7 @@ private:
     TaskHandle_t        fwd_task_handle_;
 
     AppRxCallback       app_cb_;
-    uint8_t             seq_;   // Outgoing sequence number
+    std::atomic<uint8_t> seq_;   // Outgoing sequence number
 
     /* FreeRTOS task entry-points (static trampolines) */
     static void rxTaskEntry(void* arg);

@@ -66,32 +66,32 @@ bool isBetween(GeoPoint origin, GeoPoint me, GeoPoint new_transmitter,
                float threshold_m)
 {
     // Use local flat-earth approximation (metre offsets from origin).
-    auto mx = [](GeoPoint ref, GeoPoint p) -> std::pair<double,double> {
-        double dLat = (toDeg(p.lat) - toDeg(ref.lat)) * kDegToRad * kEarthR;
-        double dLon = (toDeg(p.lon) - toDeg(ref.lon)) * kDegToRad * kEarthR
+    auto toLocalMeters = [](GeoPoint ref, GeoPoint p) -> std::pair<double,double> {
+        double dy = (toDeg(p.lat) - toDeg(ref.lat)) * kDegToRad * kEarthR;
+        double dx = (toDeg(p.lon) - toDeg(ref.lon)) * kDegToRad * kEarthR
                        * std::cos(toRad(ref.lat));
-        return {dLat, dLon};
+        return {dx, dy};
     };
 
-    auto [my, mx_] = mx(origin, me);            // me relative to origin
-    auto [ty, tx_] = mx(origin, new_transmitter); // new_tx relative to origin
+    auto [me_x, me_y] = toLocalMeters(origin, me);
+    auto [tx_x, tx_y] = toLocalMeters(origin, new_transmitter);
 
-    double seg_len2 = tx_ * tx_ + ty * ty;
+    double seg_len2 = tx_x * tx_x + tx_y * tx_y;
     if (seg_len2 < 1e-6) return false;           // origin ≈ new_tx
 
     // Projection parameter t of "me" onto segment origin→new_tx
-    double t = (mx_ * tx_ + my * ty) / seg_len2;
+    double t = (me_x * tx_x + me_y * tx_y) / seg_len2;
     if (t < 0.0 || t > 1.0) return false;
 
     // Perpendicular distance
-    double px = mx_ - t * tx_;
-    double py = my  - t * ty;
+    double px = me_x - t * tx_x;
+    double py = me_y - t * tx_y;
     double perp = std::sqrt(px * px + py * py);
     if (perp > static_cast<double>(threshold_m)) return false;
 
     // Additional check: dist(origin, me) < dist(origin, new_tx)
-    double dist_me  = std::sqrt(mx_ * mx_ + my * my);
-    double dist_tx  = std::sqrt(tx_ * tx_ + ty * ty);
+    double dist_me  = std::sqrt(me_x * me_x + me_y * me_y);
+    double dist_tx  = std::sqrt(tx_x * tx_x + tx_y * tx_y);
     return dist_me < dist_tx;
 }
 

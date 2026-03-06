@@ -2,6 +2,7 @@
 #include "geo_utils.h"
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 
 #ifndef CONFIG_NET_HOLDBACK_MAX_MS
 #define CONFIG_NET_HOLDBACK_MAX_MS 500
@@ -16,12 +17,17 @@
 #define CONFIG_NET_DIRECTIONAL_HALF_ANGLE 4500
 #endif
 
+static constexpr uint8_t kMaxPriorityIndex = 3;
+
 static constexpr float kPriorityMultiplier[] = {
     0.25f,  // EMERGENCY
     0.50f,  // HIGH
     1.00f,  // NORMAL
     1.50f,  // LOW
 };
+
+static_assert(std::size(kPriorityMultiplier) == kMaxPriorityIndex + 1,
+              "Priority multiplier array size mismatch");
 
 RoutingEngine::RoutingEngine(DuplicateFilter& dup_filter,
                              const ILocationProvider& loc_provider)
@@ -93,7 +99,7 @@ uint32_t RoutingEngine::computeHoldback(const NetworkHeader& hdr,
     float holdback = t_min + (t_max - t_min) * combined;
 
     uint8_t pri = hdr.priority;
-    if (pri > 3) pri = 3;
+    if (pri > kMaxPriorityIndex) pri = kMaxPriorityIndex;
     holdback *= kPriorityMultiplier[pri];
 
     return static_cast<uint32_t>(holdback);

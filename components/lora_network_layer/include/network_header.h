@@ -57,6 +57,7 @@ struct __attribute__((packed)) NetworkHeader {
     uint8_t  hops_remaining;   // Countdown
     uint16_t max_distance_m;   // Max radius from origin (m)
     uint16_t lifetime_s;       // TTL in seconds
+    uint8_t  reserved[4];      // Padding to 45 bytes (future use)
 
     /* ---- helpers ---- */
 

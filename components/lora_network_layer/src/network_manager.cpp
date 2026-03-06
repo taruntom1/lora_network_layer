@@ -66,7 +66,7 @@ void NetworkManager::setAppRxCallback(AppRxCallback cb)
 
 int NetworkManager::sendMessage(Priority priority, PropagationMode mode,
                                 uint16_t target_heading, uint8_t max_hops,
-                                uint16_t max_dist_m, uint16_t lifetime_s,
+                                uint16_t max_distance_m, uint16_t lifetime_s,
                                 const uint8_t* payload, size_t payload_len)
 {
     if (payload_len > NET_MAX_APP_PAYLOAD) return -1;
@@ -88,7 +88,7 @@ int NetworkManager::sendMessage(Priority priority, PropagationMode mode,
     hdr.prop_mode       = static_cast<uint8_t>(mode);
     hdr.target_heading  = target_heading;
     hdr.hops_remaining  = max_hops;
-    hdr.max_distance_m  = max_dist_m;
+    hdr.max_distance_m  = max_distance_m;
     hdr.lifetime_s      = lifetime_s;
 
     // Register in duplicate filter so we don't process our own message.

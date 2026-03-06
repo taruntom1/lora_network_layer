@@ -76,10 +76,12 @@ void DuplicateFilter::markSeen(uint32_t id)
 
 size_t DuplicateFilter::size() const
 {
+    xSemaphoreTake(mutex_, portMAX_DELAY);
     size_t count = 0;
     for (size_t i = 0; i < capacity_; ++i) {
         if (entries_[i].used) ++count;
     }
+    xSemaphoreGive(mutex_);
     return count;
 }
 
