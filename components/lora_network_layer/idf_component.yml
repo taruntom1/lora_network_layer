@@ -1,0 +1,3 @@
+dependencies:
+  taruntom1/lora_radio:
+    version: "*"

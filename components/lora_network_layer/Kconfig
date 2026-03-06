@@ -1,0 +1,55 @@
+menu "LoRa Network Layer"
+
+    config NET_HOLDBACK_MAX_MS
+        int "Maximum hold-back timer (ms)"
+        default 500
+        help
+            Upper bound of the hold-back timer used for relay scheduling.
+
+    config NET_HOLDBACK_MIN_MS
+        int "Minimum hold-back timer (ms)"
+        default 50
+        help
+            Lower bound of the hold-back timer used for relay scheduling.
+
+    config NET_ESTIMATED_RADIO_RANGE_M
+        int "Estimated radio range (m)"
+        default 2000
+        help
+            Assumed maximum single-hop range, used to normalise distance
+            in the hold-back formula.
+
+    config NET_DUPLICATE_CACHE_SIZE
+        int "Duplicate filter capacity"
+        default 64
+        help
+            Number of message IDs kept in the LRU duplicate cache.
+
+    config NET_FORWARDING_QUEUE_SIZE
+        int "Pending relay slots"
+        default 8
+        help
+            Maximum number of messages that can be held back simultaneously.
+
+    config NET_RX_QUEUE_DEPTH
+        int "RX event queue depth"
+        default 8
+        help
+            Depth of the FreeRTOS queue between the link-layer callback and
+            the network RX task.
+
+    config NET_DIRECTIONAL_HALF_ANGLE
+        int "Directional cone half-angle (0.01 deg)"
+        default 4500
+        help
+            Half-angle for directional propagation filtering, expressed in
+            hundredths of a degree (4500 = 45.00 degrees).
+
+    config NET_BETWEENNESS_THRESHOLD_M
+        int "Betweenness perpendicular threshold (m)"
+        default 100
+        help
+            Maximum perpendicular distance from the origin-to-new-transmitter
+            line for a node to be considered "between" them.
+
+endmenu
