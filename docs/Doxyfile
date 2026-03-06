@@ -7,7 +7,7 @@ INPUT                  = components/lora_network_layer/include docs
 FILE_PATTERNS          = *.h *.hpp *.md
 RECURSIVE              = YES
 
-USE_MDFILE_AS_MAINPAGE = mainpage.md
+USE_MDFILE_AS_MAINPAGE = docs/mainpage.md
 MARKDOWN_SUPPORT       = YES
 
 OPTIMIZE_OUTPUT_FOR_C  = NO

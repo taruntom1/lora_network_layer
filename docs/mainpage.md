@@ -20,6 +20,9 @@ directory:
 - `NetworkHeader`
 - `LoraLinkAdapter`
 
+Also see the [Network Layer Architecture](architecture.md) page for a
+high-level module and data-flow overview.
+
 ## Notes
 
 This page is configured as the Doxygen main page via
