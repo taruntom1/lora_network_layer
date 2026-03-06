@@ -1,0 +1,26 @@
+PROJECT_NAME           = "lora_network_layer"
+PROJECT_BRIEF          = "V2X LoRa multi-hop network layer for ESP-IDF"
+OUTPUT_DIRECTORY       = docs/build
+CREATE_SUBDIRS         = NO
+
+INPUT                  = components/lora_network_layer/include docs
+FILE_PATTERNS          = *.h *.hpp *.md
+RECURSIVE              = YES
+
+USE_MDFILE_AS_MAINPAGE = docs/mainpage.md
+MARKDOWN_SUPPORT       = YES
+
+OPTIMIZE_OUTPUT_FOR_C  = NO
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = NO
+
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+HTML_EXTRA_STYLESHEET  = docs/doxygen-awesome.css
+HAVE_DOT               = NO
+
+GENERATE_LATEX         = NO
+GENERATE_XML           = NO
+GENERATE_MAN           = NO
+GENERATE_RTF           = NO
