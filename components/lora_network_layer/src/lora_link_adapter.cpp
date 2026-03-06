@@ -3,8 +3,9 @@
 
 static LoraLinkAdapter* s_adapter_instance = nullptr;
 
-LoraLinkAdapter::LoraLinkAdapter(LoraRadio& radio)
+LoraLinkAdapter::LoraLinkAdapter(LoraRadio& radio, uint16_t nodeId)
     : radio_(radio)
+    , nodeId_(nodeId)
 {
 }
 
@@ -31,5 +32,5 @@ void LoraLinkAdapter::setRxHandler(RxHandler handler)
 
 uint16_t LoraLinkAdapter::getNodeId() const
 {
-    return radio_.getNodeId();
+    return nodeId_;
 }
