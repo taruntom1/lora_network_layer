@@ -26,6 +26,7 @@ NetworkManager::NetworkManager(ILinkLayer& link, ILocationProvider& loc,
     , rx_queue_(nullptr)
     , rx_task_handle_(nullptr)
     , fwd_task_handle_(nullptr)
+    , started_(false)
     , app_cb_mutex_(nullptr)
     , seq_(0)
 {
@@ -46,6 +47,11 @@ NetworkManager::~NetworkManager()
 
 void NetworkManager::start()
 {
+    // Idempotent guard: ignore repeated start() calls.
+    if (started_.exchange(true)) {
+        return;
+    }
+
     // Register link-layer RX handler that pushes events onto the queue.
     link_.setRxHandler([this](const uint8_t* data, size_t len,
                               float rssi, float snr) {
@@ -58,10 +64,25 @@ void NetworkManager::start()
         xQueueSendToBack(rx_queue_, &evt, 0);  // Non-blocking
     });
 
-    xTaskCreate(rxTaskEntry, "net_rx", kRxTaskStack, this,
-                kRxTaskPrio, &rx_task_handle_);
-    xTaskCreate(fwdTaskEntry, "net_fwd", kFwdTaskStack, this,
-                kFwdTaskPrio, &fwd_task_handle_);
+    BaseType_t rc = xTaskCreate(rxTaskEntry, "net_rx", kRxTaskStack, this,
+                                kRxTaskPrio, &rx_task_handle_);
+    if (rc != pdPASS) {
+        link_.setRxHandler(nullptr);
+        started_.store(false);
+        configASSERT(false);
+        return;
+    }
+
+    rc = xTaskCreate(fwdTaskEntry, "net_fwd", kFwdTaskStack, this,
+                     kFwdTaskPrio, &fwd_task_handle_);
+    if (rc != pdPASS) {
+        vTaskDelete(rx_task_handle_);
+        rx_task_handle_ = nullptr;
+        link_.setRxHandler(nullptr);
+        started_.store(false);
+        configASSERT(false);
+        return;
+    }
 }
 
 void NetworkManager::setAppRxCallback(AppRxCallback cb)
@@ -76,7 +97,9 @@ int NetworkManager::sendMessage(Priority priority, PropagationMode mode,
                                 uint16_t max_distance_m, uint16_t lifetime_s,
                                 const uint8_t* payload, size_t payload_len)
 {
-    if (payload_len > NET_MAX_APP_PAYLOAD) return -1;
+    if (payload_len > NET_MAX_APP_PAYLOAD) {
+        return static_cast<int>(NetworkError::PayloadTooLarge);
+    }
 
     NetworkHeader hdr{};
     uint16_t node_id = link_.getNodeId();
@@ -107,7 +130,11 @@ int NetworkManager::sendMessage(Priority priority, PropagationMode mode,
     std::memcpy(buf + sizeof(NetworkHeader), payload, payload_len);
     size_t total = sizeof(NetworkHeader) + payload_len;
 
-    return link_.send(BROADCAST_ADDR, buf, total);
+    int send_rc = link_.send(BROADCAST_ADDR, buf, total);
+    if (send_rc != 0) {
+        return static_cast<int>(NetworkError::LinkSendFailed);
+    }
+    return static_cast<int>(NetworkError::Ok);
 }
 
 /* ---- Task entry points ---- */
