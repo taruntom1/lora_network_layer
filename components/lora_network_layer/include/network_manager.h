@@ -6,6 +6,7 @@
 #include <functional>
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "network_header.h"
 #include "link_layer_interface.h"
@@ -94,6 +95,7 @@ private:
     QueueHandle_t       rx_queue_;
     TaskHandle_t        rx_task_handle_;
     TaskHandle_t        fwd_task_handle_;
+    SemaphoreHandle_t   app_cb_mutex_;
 
     AppRxCallback       app_cb_;
     std::atomic<uint8_t> seq_;   // Outgoing sequence number
