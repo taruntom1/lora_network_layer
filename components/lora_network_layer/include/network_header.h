@@ -29,8 +29,8 @@ static constexpr uint16_t BROADCAST_ADDR   = 0xFFFF;
 /** Link-layer message type reserved for network-layer frames. */
 static constexpr uint8_t  NET_MSG_TYPE     = 0x10;
 
-/** Maximum application payload after the 45-byte network header (247 − 45). */
-static constexpr size_t   NET_MAX_APP_PAYLOAD = 202;
+/** Maximum LoRa payload size in bytes. */
+static constexpr size_t   LORA_MAX_PAYLOAD = 247;
 
 /**
  * 45-byte packed network header transmitted over the air.
@@ -69,3 +69,6 @@ struct __attribute__((packed)) NetworkHeader {
 };
 
 static_assert(sizeof(NetworkHeader) == 45, "NetworkHeader must be exactly 45 bytes");
+
+/** Maximum application payload after the network header. */
+static constexpr size_t   NET_MAX_APP_PAYLOAD = LORA_MAX_PAYLOAD - sizeof(NetworkHeader);

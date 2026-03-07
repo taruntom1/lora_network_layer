@@ -4,12 +4,14 @@
 #include <cstddef>
 #include <functional>
 
+#include "network_header.h"
+
 /**
  * Raw frame received from the link layer.
  * Stored in a FreeRTOS queue so the radio-task context is never blocked.
  */
 struct RxEvent {
-    uint8_t  data[247];   // Up to LORA_MAX_PAYLOAD bytes
+    uint8_t  data[LORA_MAX_PAYLOAD];
     size_t   len;
     float    rssi;
     float    snr;
