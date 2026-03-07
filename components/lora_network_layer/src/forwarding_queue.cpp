@@ -13,7 +13,8 @@ ForwardingQueue::ForwardingQueue(size_t capacity, ILinkLayer& link,
     , link_(link)
     , loc_(loc)
 {
-    slots_ = new PendingRelay[capacity_];
+    // Runtime capacity can be <= compile-time storage limit.
+    configASSERT(capacity_ <= kMaxSlots);
     for (size_t i = 0; i < capacity_; ++i) {
         slots_[i].active = false;
     }
@@ -24,7 +25,6 @@ ForwardingQueue::ForwardingQueue(size_t capacity, ILinkLayer& link,
 ForwardingQueue::~ForwardingQueue()
 {
     vSemaphoreDelete(mutex_);
-    delete[] slots_;
 }
 
 bool ForwardingQueue::enqueue(const NetworkHeader& hdr, const uint8_t* payload,
@@ -76,22 +76,21 @@ bool ForwardingQueue::enqueue(const NetworkHeader& hdr, const uint8_t* payload,
 void ForwardingQueue::processTick()
 {
     TickType_t now = xTaskGetTickCount();
+    size_t due_count = 0;
 
     xSemaphoreTake(mutex_, portMAX_DELAY);
     for (size_t i = 0; i < capacity_; ++i) {
         if (slots_[i].active && now >= slots_[i].fire_tick) {
-            // Copy out while holding the lock, then release.
-            PendingRelay entry = slots_[i];
+            // Snapshot due entries while locked, then send after unlock.
+            fire_buf_[due_count++] = slots_[i];
             slots_[i].active = false;
-            xSemaphoreGive(mutex_);
-
-            fireEntry(entry);
-
-            // Re-acquire for the rest of the iteration.
-            xSemaphoreTake(mutex_, portMAX_DELAY);
         }
     }
     xSemaphoreGive(mutex_);
+
+    for (size_t i = 0; i < due_count; ++i) {
+        fireEntry(fire_buf_[i]);
+    }
 }
 
 void ForwardingQueue::onDuplicateHeard(const NetworkHeader& heard_hdr)
