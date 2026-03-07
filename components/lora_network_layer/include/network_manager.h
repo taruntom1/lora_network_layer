@@ -107,6 +107,7 @@ private:
     TaskHandle_t        fwd_task_handle_;
 
     AppRxCallback       app_cb_;
+    std::atomic<bool>   started_;  // True once runtime tasks/handlers are installed.
     std::atomic<uint8_t> seq_;   // Outgoing sequence number
 
     /* FreeRTOS task entry-points (static trampolines) */

@@ -26,6 +26,7 @@ NetworkManager::NetworkManager(ILinkLayer& link, ILocationProvider& loc,
     , rx_queue_(nullptr)
     , rx_task_handle_(nullptr)
     , fwd_task_handle_(nullptr)
+    , started_(false)
     , seq_(0)
 {
     rx_queue_ = xQueueCreate(cfg.rx_queue_depth, sizeof(RxEvent));
@@ -42,6 +43,11 @@ NetworkManager::~NetworkManager()
 
 void NetworkManager::start()
 {
+    // Idempotent guard: ignore repeated start() calls.
+    if (started_.exchange(true)) {
+        return;
+    }
+
     // Register link-layer RX handler that pushes events onto the queue.
     link_.setRxHandler([this](const uint8_t* data, size_t len,
                               float rssi, float snr) {
@@ -54,10 +60,25 @@ void NetworkManager::start()
         xQueueSendToBack(rx_queue_, &evt, 0);  // Non-blocking
     });
 
-    xTaskCreate(rxTaskEntry, "net_rx", kRxTaskStack, this,
-                kRxTaskPrio, &rx_task_handle_);
-    xTaskCreate(fwdTaskEntry, "net_fwd", kFwdTaskStack, this,
-                kFwdTaskPrio, &fwd_task_handle_);
+    BaseType_t rc = xTaskCreate(rxTaskEntry, "net_rx", kRxTaskStack, this,
+                                kRxTaskPrio, &rx_task_handle_);
+    if (rc != pdPASS) {
+        link_.setRxHandler(nullptr);
+        started_.store(false);
+        configASSERT(false);
+        return;
+    }
+
+    rc = xTaskCreate(fwdTaskEntry, "net_fwd", kFwdTaskStack, this,
+                     kFwdTaskPrio, &fwd_task_handle_);
+    if (rc != pdPASS) {
+        vTaskDelete(rx_task_handle_);
+        rx_task_handle_ = nullptr;
+        link_.setRxHandler(nullptr);
+        started_.store(false);
+        configASSERT(false);
+        return;
+    }
 }
 
 void NetworkManager::setAppRxCallback(AppRxCallback cb)
