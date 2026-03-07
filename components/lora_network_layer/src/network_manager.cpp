@@ -27,10 +27,13 @@ NetworkManager::NetworkManager(ILinkLayer& link, ILocationProvider& loc,
     , rx_task_handle_(nullptr)
     , fwd_task_handle_(nullptr)
     , started_(false)
+    , app_cb_mutex_(nullptr)
     , seq_(0)
 {
     rx_queue_ = xQueueCreate(cfg.rx_queue_depth, sizeof(RxEvent));
+    app_cb_mutex_ = xSemaphoreCreateMutex();
     configASSERT(rx_queue_);
+    configASSERT(app_cb_mutex_);
 }
 
 NetworkManager::~NetworkManager()
@@ -38,6 +41,7 @@ NetworkManager::~NetworkManager()
     link_.setRxHandler(nullptr);
     if (rx_task_handle_)  vTaskDelete(rx_task_handle_);
     if (fwd_task_handle_) vTaskDelete(fwd_task_handle_);
+    if (app_cb_mutex_)    vSemaphoreDelete(app_cb_mutex_);
     if (rx_queue_)        vQueueDelete(rx_queue_);
 }
 
@@ -83,7 +87,9 @@ void NetworkManager::start()
 
 void NetworkManager::setAppRxCallback(AppRxCallback cb)
 {
+    xSemaphoreTake(app_cb_mutex_, portMAX_DELAY);
     app_cb_ = std::move(cb);
+    xSemaphoreGive(app_cb_mutex_);
 }
 
 int NetworkManager::sendMessage(Priority priority, PropagationMode mode,
@@ -166,9 +172,14 @@ void NetworkManager::rxTaskLoop()
 
         if (result.verdict == Verdict::DROP) continue;
 
-        // Deliver to application.
-        if (app_cb_) {
-            app_cb_(hdr, app_payload, app_len);
+        // Copy callback under lock, then invoke it unlocked.
+        AppRxCallback cb;
+        xSemaphoreTake(app_cb_mutex_, portMAX_DELAY);
+        cb = app_cb_;
+        xSemaphoreGive(app_cb_mutex_);
+
+        if (cb) {
+            cb(hdr, app_payload, app_len);
         }
 
         // Schedule relay if needed.
