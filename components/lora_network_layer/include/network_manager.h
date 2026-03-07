@@ -21,6 +21,13 @@ struct NetworkConfig {
     size_t rx_queue_depth;
 };
 
+/** Error codes returned by NetworkManager::sendMessage(). */
+enum class NetworkError : int {
+    Ok              = 0,
+    PayloadTooLarge = -1,
+    LinkSendFailed  = -2,
+};
+
 /**
  * @brief Coordinates the network-layer pipeline and runtime tasks.
  *
@@ -77,7 +84,11 @@ public:
      * @param lifetime_s Time-to-live for the message in seconds.
      * @param payload Application payload bytes to transmit.
      * @param payload_len Number of payload bytes in @p payload.
-     * @return 0 on success, negative value on error.
+     * @return `static_cast<int>(NetworkError::Ok)` on success.
+     * @return `static_cast<int>(NetworkError::PayloadTooLarge)` when
+     *         @p payload_len exceeds NET_MAX_APP_PAYLOAD.
+     * @return `static_cast<int>(NetworkError::LinkSendFailed)` when the
+     *         underlying link-layer send operation fails.
      */
     int sendMessage(Priority priority, PropagationMode mode,
                     uint16_t target_heading, uint8_t max_hops,
