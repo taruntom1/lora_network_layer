@@ -1,4 +1,5 @@
 #include "network_manager.h"
+#include "esp_log.h"
 #include <cstring>
 
 #ifndef CONFIG_NET_DUPLICATE_CACHE_SIZE
@@ -15,6 +16,7 @@ static constexpr UBaseType_t kRxTaskPrio  = 5;
 static constexpr UBaseType_t kFwdTaskPrio = 4;
 static constexpr uint32_t   kRxTaskStack  = 4096;
 static constexpr uint32_t   kFwdTaskStack = 4096;
+static const char* TAG = "network_manager";
 
 NetworkManager::NetworkManager(ILinkLayer& link, ILocationProvider& loc,
                                const NetworkConfig& cfg)
@@ -34,9 +36,18 @@ NetworkManager::NetworkManager(ILinkLayer& link, ILocationProvider& loc,
 
 NetworkManager::~NetworkManager()
 {
-    if (rx_task_handle_)  vTaskDelete(rx_task_handle_);
-    if (fwd_task_handle_) vTaskDelete(fwd_task_handle_);
-    if (rx_queue_)        vQueueDelete(rx_queue_);
+    if (rx_task_handle_) {
+        ESP_LOGI(TAG, "Stopping RX task");
+        vTaskDelete(rx_task_handle_);
+    }
+    if (fwd_task_handle_) {
+        ESP_LOGI(TAG, "Stopping forwarding task");
+        vTaskDelete(fwd_task_handle_);
+    }
+    if (rx_queue_) {
+        ESP_LOGI(TAG, "Deleting RX queue");
+        vQueueDelete(rx_queue_);
+    }
 }
 
 void NetworkManager::start()
@@ -50,13 +61,17 @@ void NetworkManager::start()
         evt.len  = copy_len;
         evt.rssi = rssi;
         evt.snr  = snr;
-        xQueueSendToBack(rx_queue_, &evt, 0);  // Non-blocking
+        if (xQueueSendToBack(rx_queue_, &evt, 0) != pdTRUE) {  // Non-blocking
+            ESP_LOGW(TAG, "RX queue full, dropping frame len=%zu", copy_len);
+        }
     });
 
     xTaskCreate(rxTaskEntry, "net_rx", kRxTaskStack, this,
                 kRxTaskPrio, &rx_task_handle_);
+    ESP_LOGI(TAG, "RX task started");
     xTaskCreate(fwdTaskEntry, "net_fwd", kFwdTaskStack, this,
                 kFwdTaskPrio, &fwd_task_handle_);
+    ESP_LOGI(TAG, "Forwarding task started");
 }
 
 void NetworkManager::setAppRxCallback(AppRxCallback cb)
@@ -136,7 +151,11 @@ void NetworkManager::rxTaskLoop()
         // Run routing pipeline.
         EvalResult result = routing_.evaluate(hdr, evt.rssi, evt.snr);
 
-        if (result.verdict == Verdict::DROP) continue;
+        if (result.verdict == Verdict::DROP) {
+            ESP_LOGD(TAG, "Dropping msg_id=0x%08lx by routing verdict",
+                     static_cast<unsigned long>(hdr.message_id));
+            continue;
+        }
 
         // Deliver to application.
         if (app_cb_) {
@@ -145,7 +164,13 @@ void NetworkManager::rxTaskLoop()
 
         // Schedule relay if needed.
         if (result.verdict == Verdict::DELIVER_AND_FORWARD) {
-            fwd_queue_.enqueue(hdr, app_payload, app_len, result.holdback_ms);
+            ESP_LOGD(TAG, "Scheduling relay msg_id=0x%08lx holdback_ms=%lu",
+                     static_cast<unsigned long>(hdr.message_id),
+                     static_cast<unsigned long>(result.holdback_ms));
+            if (!fwd_queue_.enqueue(hdr, app_payload, app_len, result.holdback_ms)) {
+                ESP_LOGW(TAG, "Forwarding queue full, dropped relay msg_id=0x%08lx",
+                         static_cast<unsigned long>(hdr.message_id));
+            }
         }
     }
 }
