@@ -1,4 +1,5 @@
 #include "routing_engine.h"
+#include "esp_log.h"
 #include "geo_utils.h"
 #include <algorithm>
 #include <cmath>
@@ -18,6 +19,7 @@
 #endif
 
 static constexpr uint8_t kMaxPriorityIndex = 3;
+static const char* TAG = "routing_engine";
 
 static constexpr float kPriorityMultiplier[] = {
     0.25f,  // EMERGENCY
@@ -41,6 +43,8 @@ EvalResult RoutingEngine::evaluate(const NetworkHeader& hdr,
 {
     // 1. Duplicate check
     if (dup_filter_.isDuplicate(hdr.message_id)) {
+        ESP_LOGD(TAG, "Duplicate detected msg_id=0x%08lx, dropping",
+                 static_cast<unsigned long>(hdr.message_id));
         return {Verdict::DROP, 0};
     }
 
@@ -48,12 +52,16 @@ EvalResult RoutingEngine::evaluate(const NetworkHeader& hdr,
     uint32_t now = loc_.getTimestamp();
     if (now != 0 && hdr.timestamp != 0) {
         if (hdr.timestamp + hdr.lifetime_s < now) {
+            ESP_LOGD(TAG, "TTL expired msg_id=0x%08lx, dropping",
+                     static_cast<unsigned long>(hdr.message_id));
             return {Verdict::DROP, 0};
         }
     }
 
     // 3. Hops remaining
     if (hdr.hops_remaining == 0) {
+        ESP_LOGD(TAG, "Routing verdict DELIVER_ONLY msg_id=0x%08lx (hops exhausted)",
+                 static_cast<unsigned long>(hdr.message_id));
         return {Verdict::DELIVER_ONLY, 0};
     }
 
@@ -62,6 +70,8 @@ EvalResult RoutingEngine::evaluate(const NetworkHeader& hdr,
     float dist_from_origin = geo::haversine_m(hdr.originPoint(), my_loc);
     if (hdr.max_distance_m > 0 &&
         dist_from_origin > static_cast<float>(hdr.max_distance_m)) {
+        ESP_LOGD(TAG, "Routing verdict DELIVER_ONLY msg_id=0x%08lx (max distance exceeded)",
+                 static_cast<unsigned long>(hdr.message_id));
         return {Verdict::DELIVER_ONLY, 0};
     }
 
@@ -70,12 +80,17 @@ EvalResult RoutingEngine::evaluate(const NetworkHeader& hdr,
         if (!geo::isInsideCone(hdr.originPoint(), my_loc,
                                hdr.target_heading,
                                CONFIG_NET_DIRECTIONAL_HALF_ANGLE)) {
+            ESP_LOGD(TAG, "Routing verdict DELIVER_ONLY msg_id=0x%08lx (outside cone)",
+                     static_cast<unsigned long>(hdr.message_id));
             return {Verdict::DELIVER_ONLY, 0};
         }
     }
 
     // All checks passed — deliver and forward
     uint32_t holdback = computeHoldback(hdr, snr);
+    ESP_LOGD(TAG, "Routing verdict DELIVER_AND_FORWARD msg_id=0x%08lx holdback_ms=%lu",
+             static_cast<unsigned long>(hdr.message_id),
+             static_cast<unsigned long>(holdback));
     return {Verdict::DELIVER_AND_FORWARD, holdback};
 }
 
