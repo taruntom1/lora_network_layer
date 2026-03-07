@@ -10,11 +10,23 @@
 #ifndef CONFIG_NET_RX_QUEUE_DEPTH
 #define CONFIG_NET_RX_QUEUE_DEPTH 8
 #endif
+#ifndef CONFIG_NET_RX_TASK_PRIORITY
+#define CONFIG_NET_RX_TASK_PRIORITY 5
+#endif
+#ifndef CONFIG_NET_FWD_TASK_PRIORITY
+#define CONFIG_NET_FWD_TASK_PRIORITY 4
+#endif
+#ifndef CONFIG_NET_RX_TASK_STACK
+#define CONFIG_NET_RX_TASK_STACK 4096
+#endif
+#ifndef CONFIG_NET_FWD_TASK_STACK
+#define CONFIG_NET_FWD_TASK_STACK 4096
+#endif
 
-static constexpr UBaseType_t kRxTaskPrio  = 5;
-static constexpr UBaseType_t kFwdTaskPrio = 4;
-static constexpr uint32_t   kRxTaskStack  = 4096;
-static constexpr uint32_t   kFwdTaskStack = 4096;
+static constexpr UBaseType_t kRxTaskPrio  = static_cast<UBaseType_t>(CONFIG_NET_RX_TASK_PRIORITY);
+static constexpr UBaseType_t kFwdTaskPrio = static_cast<UBaseType_t>(CONFIG_NET_FWD_TASK_PRIORITY);
+static constexpr uint32_t    kRxTaskStack = static_cast<uint32_t>(CONFIG_NET_RX_TASK_STACK);
+static constexpr uint32_t    kFwdTaskStack = static_cast<uint32_t>(CONFIG_NET_FWD_TASK_STACK);
 
 NetworkManager::NetworkManager(ILinkLayer& link, ILocationProvider& loc,
                                const NetworkConfig& cfg)
