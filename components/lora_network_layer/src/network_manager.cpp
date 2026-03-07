@@ -34,6 +34,7 @@ NetworkManager::NetworkManager(ILinkLayer& link, ILocationProvider& loc,
 
 NetworkManager::~NetworkManager()
 {
+    link_.setRxHandler(nullptr);
     if (rx_task_handle_)  vTaskDelete(rx_task_handle_);
     if (fwd_task_handle_) vTaskDelete(fwd_task_handle_);
     if (rx_queue_)        vQueueDelete(rx_queue_);
