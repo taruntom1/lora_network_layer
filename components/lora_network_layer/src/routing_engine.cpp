@@ -39,17 +39,17 @@ RoutingEngine::RoutingEngine(DuplicateFilter& dup_filter,
 EvalResult RoutingEngine::evaluate(const NetworkHeader& hdr,
                                    float rssi, float snr)
 {
-    // 1. Duplicate check
-    if (dup_filter_.isDuplicate(hdr.message_id)) {
-        return {Verdict::DROP, 0};
-    }
-
-    // 2. TTL check (skip if timestamp is 0 = time unknown)
+    // 1. TTL check (skip if timestamp is 0 = time unknown)
     uint32_t now = loc_.getTimestamp();
     if (now != 0 && hdr.timestamp != 0) {
         if (hdr.timestamp + hdr.lifetime_s < now) {
             return {Verdict::DROP, 0};
         }
+    }
+
+    // 2. Duplicate check
+    if (dup_filter_.isDuplicate(hdr.message_id)) {
+        return {Verdict::DROP, 0};
     }
 
     // 3. Hops remaining
