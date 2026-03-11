@@ -42,5 +42,5 @@ private:
     DuplicateFilter&        dup_filter_;
     const ILocationProvider& loc_;
 
-    uint32_t computeHoldback(const NetworkHeader& hdr, float snr) const;
+    uint32_t computeHoldback(const NetworkHeader& hdr, float rssi, float snr) const;
 };
