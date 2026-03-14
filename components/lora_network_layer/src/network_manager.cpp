@@ -1,4 +1,5 @@
 #include "network_manager.h"
+#include "esp_log.h"
 #include <cstring>
 
 #ifndef CONFIG_NET_DUPLICATE_CACHE_SIZE
@@ -27,6 +28,7 @@ static constexpr UBaseType_t kRxTaskPrio  = static_cast<UBaseType_t>(CONFIG_NET_
 static constexpr UBaseType_t kFwdTaskPrio = static_cast<UBaseType_t>(CONFIG_NET_FWD_TASK_PRIORITY);
 static constexpr uint32_t    kRxTaskStack = static_cast<uint32_t>(CONFIG_NET_RX_TASK_STACK);
 static constexpr uint32_t    kFwdTaskStack = static_cast<uint32_t>(CONFIG_NET_FWD_TASK_STACK);
+static const char* TAG = "network_manager";
 
 NetworkManager::NetworkManager(ILinkLayer& link, ILocationProvider& loc,
                                const NetworkConfig& cfg)
@@ -80,11 +82,14 @@ void NetworkManager::start()
         evt.len  = copy_len;
         evt.rssi = rssi;
         evt.snr  = snr;
-        xQueueSendToBack(rx_queue_, &evt, 0);  // Non-blocking
+        if (xQueueSendToBack(rx_queue_, &evt, 0) != pdTRUE) {  // Non-blocking
+            ESP_LOGW(TAG, "RX queue full, dropping frame len=%zu", copy_len);
+        }
     });
 
     BaseType_t rc = xTaskCreate(rxTaskEntry, "net_rx", kRxTaskStack, this,
                                 kRxTaskPrio, &rx_task_handle_);
+    ESP_LOGI(TAG, "RX task started");
     if (rc != pdPASS) {
         link_.setRxHandler(nullptr);
         started_.store(false);
@@ -102,6 +107,7 @@ void NetworkManager::start()
         configASSERT(false);
         return;
     }
+    ESP_LOGI(TAG, "Forwarding task started");
 }
 
 void NetworkManager::setAppRxCallback(AppRxCallback cb)
@@ -186,7 +192,11 @@ void NetworkManager::rxTaskLoop()
         fwd_queue_.onDuplicateHeard(hdr);
         EvalResult result = routing_.evaluate(hdr, evt.rssi, evt.snr);
 
-        if (result.verdict == Verdict::DROP) continue;
+        if (result.verdict == Verdict::DROP) {
+            ESP_LOGD(TAG, "Dropping msg_id=0x%08lx by routing verdict",
+                     static_cast<unsigned long>(hdr.message_id));
+            continue;
+        }
 
         AppRxCallback cb;
         xSemaphoreTake(app_cb_mutex_, portMAX_DELAY);
@@ -198,7 +208,13 @@ void NetworkManager::rxTaskLoop()
         }
 
         if (result.verdict == Verdict::DELIVER_AND_FORWARD) {
-            fwd_queue_.enqueue(hdr, app_payload, app_len, result.holdback_ms);
+            ESP_LOGD(TAG, "Scheduling relay msg_id=0x%08lx holdback_ms=%lu",
+                     static_cast<unsigned long>(hdr.message_id),
+                     static_cast<unsigned long>(result.holdback_ms));
+            if (!fwd_queue_.enqueue(hdr, app_payload, app_len, result.holdback_ms)) {
+                ESP_LOGW(TAG, "Forwarding queue full, dropped relay msg_id=0x%08lx",
+                         static_cast<unsigned long>(hdr.message_id));
+            }
         }
     }
     

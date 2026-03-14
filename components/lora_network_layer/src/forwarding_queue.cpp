@@ -1,4 +1,5 @@
 #include "forwarding_queue.h"
+#include "esp_log.h"
 #include "geo_utils.h"
 #include <cstring>
 #include <algorithm>
@@ -6,6 +7,8 @@
 #ifndef CONFIG_NET_BETWEENNESS_THRESHOLD_M
 #define CONFIG_NET_BETWEENNESS_THRESHOLD_M 100
 #endif
+
+static const char* TAG = "forwarding_queue";
 
 ForwardingQueue::ForwardingQueue(size_t capacity, ILinkLayer& link,
                                  const ILocationProvider& loc)
@@ -56,6 +59,8 @@ bool ForwardingQueue::enqueue(const NetworkHeader& hdr, const uint8_t* payload,
     }
 
     if (!slot) {
+        ESP_LOGW(TAG, "Forwarding queue full, drop msg_id=0x%08lx",
+                 static_cast<unsigned long>(hdr.message_id));
         xSemaphoreGive(mutex_);
         return false;
     }
@@ -143,5 +148,9 @@ void ForwardingQueue::fireEntry(PendingRelay& entry)
     std::memcpy(buf + sizeof(NetworkHeader), entry.payload, entry.payload_len);
     size_t total = sizeof(NetworkHeader) + entry.payload_len;
 
+    ESP_LOGD(TAG, "Relay TX msg_id=0x%08lx bytes=%zu hops_remaining=%u",
+             static_cast<unsigned long>(entry.hdr.message_id),
+             total,
+             entry.hdr.hops_remaining);
     link_.send(BROADCAST_ADDR, buf, total);
 }
