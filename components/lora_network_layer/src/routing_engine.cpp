@@ -21,6 +21,11 @@
 static constexpr uint8_t kMaxPriorityIndex = 3;
 static const char* TAG = "routing_engine";
 
+// Weights for blending SNR and RSSI into a combined signal-quality score.
+static constexpr float kSnrWeight  = 0.5f;
+static constexpr float kRssiWeight = 0.5f;
+
+
 static constexpr float kPriorityMultiplier[] = {
     0.25f,  // EMERGENCY
     0.50f,  // HIGH
@@ -41,14 +46,7 @@ RoutingEngine::RoutingEngine(DuplicateFilter& dup_filter,
 EvalResult RoutingEngine::evaluate(const NetworkHeader& hdr,
                                    float rssi, float snr)
 {
-    // 1. Duplicate check
-    if (dup_filter_.isDuplicate(hdr.message_id)) {
-        ESP_LOGD(TAG, "Duplicate detected msg_id=0x%08lx, dropping",
-                 static_cast<unsigned long>(hdr.message_id));
-        return {Verdict::DROP, 0};
-    }
-
-    // 2. TTL check (skip if timestamp is 0 = time unknown)
+    // 1. TTL check (skip if timestamp is 0 = time unknown)
     uint32_t now = loc_.getTimestamp();
     if (now != 0 && hdr.timestamp != 0) {
         if (hdr.timestamp + hdr.lifetime_s < now) {
@@ -56,6 +54,13 @@ EvalResult RoutingEngine::evaluate(const NetworkHeader& hdr,
                      static_cast<unsigned long>(hdr.message_id));
             return {Verdict::DROP, 0};
         }
+    }
+
+    // 2. Duplicate check
+    if (dup_filter_.isDuplicate(hdr.message_id)) {
+        ESP_LOGD(TAG, "Duplicate detected msg_id=0x%08lx, dropping",
+        static_cast<unsigned long>(hdr.message_id));
+        return {Verdict::DROP, 0};
     }
 
     // 3. Hops remaining
@@ -87,7 +92,7 @@ EvalResult RoutingEngine::evaluate(const NetworkHeader& hdr,
     }
 
     // All checks passed — deliver and forward
-    uint32_t holdback = computeHoldback(hdr, snr);
+    uint32_t holdback = computeHoldback(hdr, rssi, snr);
     ESP_LOGD(TAG, "Routing verdict DELIVER_AND_FORWARD msg_id=0x%08lx holdback_ms=%lu",
              static_cast<unsigned long>(hdr.message_id),
              static_cast<unsigned long>(holdback));
@@ -95,7 +100,7 @@ EvalResult RoutingEngine::evaluate(const NetworkHeader& hdr,
 }
 
 uint32_t RoutingEngine::computeHoldback(const NetworkHeader& hdr,
-                                        float snr) const
+                                        float rssi, float snr) const
 {
     GeoPoint my_loc = loc_.getLocation();
     float dist = geo::haversine_m(hdr.txPoint(), my_loc);
@@ -106,8 +111,16 @@ uint32_t RoutingEngine::computeHoldback(const NetworkHeader& hdr,
     // Normalise SNR to [0, 1].  Assume SNR range roughly [-20, +15] dB.
     float snr_norm = std::clamp((snr + 20.0f) / 35.0f, 0.0f, 1.0f);
 
-    // Far nodes / weak SNR → short timer (relay first)
-    float combined = 0.7f * (1.0f - dist_ratio) + 0.3f * snr_norm;
+    // Normalise RSSI to [0, 1].  Assume RSSI range roughly [-120, -30] dBm.
+    float rssi_norm = std::clamp((rssi + 120.0f) / 90.0f, 0.0f, 1.0f);
+
+    // Combined signal quality: weighted average of normalised SNR and RSSI.
+    // Nodes with high signal quality (strong reception) wait longer — weaker/farther
+    // nodes that heard the message just barely should relay first.
+    float signal_quality = kSnrWeight * snr_norm + kRssiWeight * rssi_norm;
+
+    // Far nodes / weak signal → short timer (relay first)
+    float combined = 0.7f * (1.0f - dist_ratio) + 0.3f * signal_quality;
 
     float t_min = static_cast<float>(CONFIG_NET_HOLDBACK_MIN_MS);
     float t_max = static_cast<float>(CONFIG_NET_HOLDBACK_MAX_MS);
