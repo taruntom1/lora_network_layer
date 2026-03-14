@@ -6,6 +6,7 @@
 #include <functional>
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "network_header.h"
 #include "link_layer_interface.h"
@@ -19,6 +20,13 @@ struct NetworkConfig {
     size_t duplicate_cache_size;
     size_t forwarding_queue_size;
     size_t rx_queue_depth;
+};
+
+/** Error codes returned by NetworkManager::sendMessage(). */
+enum class NetworkError : int {
+    Ok              = 0,
+    PayloadTooLarge = -1,
+    LinkSendFailed  = -2,
 };
 
 /**
@@ -60,10 +68,16 @@ public:
     void start();
 
     /**
+     * @brief Gracefully stops RX and forwarding tasks.
+     *
+     * Call once before destruction.
+     */
+    void stop();
+    /**
      * @brief Register the callback for messages delivered to this node.
      *
      * @param cb Application callback invoked for delivered payloads.
-     */
+     */ 
     void setAppRxCallback(AppRxCallback cb);
 
     /**
@@ -77,7 +91,11 @@ public:
      * @param lifetime_s Time-to-live for the message in seconds.
      * @param payload Application payload bytes to transmit.
      * @param payload_len Number of payload bytes in @p payload.
-     * @return 0 on success, negative value on error.
+     * @return `static_cast<int>(NetworkError::Ok)` on success.
+     * @return `static_cast<int>(NetworkError::PayloadTooLarge)` when
+     *         @p payload_len exceeds NET_MAX_APP_PAYLOAD.
+     * @return `static_cast<int>(NetworkError::LinkSendFailed)` when the
+     *         underlying link-layer send operation fails.
      */
     int sendMessage(Priority priority, PropagationMode mode,
                     uint16_t target_heading, uint8_t max_hops,
@@ -94,8 +112,11 @@ private:
     QueueHandle_t       rx_queue_;
     TaskHandle_t        rx_task_handle_;
     TaskHandle_t        fwd_task_handle_;
+    SemaphoreHandle_t   app_cb_mutex_;
 
     AppRxCallback       app_cb_;
+    std::atomic<bool>   started_;  // True once runtime tasks/handlers are installed.
+    std::atomic<bool>   running_{true}; // Set false to signal tasks to stop and exit cleanly
     std::atomic<uint8_t> seq_;   // Outgoing sequence number
 
     /* FreeRTOS task entry-points (static trampolines) */
