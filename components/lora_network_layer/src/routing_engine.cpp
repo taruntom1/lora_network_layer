@@ -47,7 +47,8 @@ EvalResult RoutingEngine::evaluate(const NetworkHeader& hdr,
     // 2. TTL check (skip if timestamp is 0 = time unknown)
     uint32_t now = loc_.getTimestamp();
     if (now != 0 && hdr.timestamp != 0) {
-        if (hdr.timestamp + hdr.lifetime_s < now) {
+        uint32_t elapsed = now - hdr.timestamp; // wrap-safe subtraction
+        if (elapsed > hdr.lifetime_s) {
             return {Verdict::DROP, 0};
         }
     }
