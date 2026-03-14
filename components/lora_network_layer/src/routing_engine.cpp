@@ -96,11 +96,18 @@ uint32_t RoutingEngine::computeHoldback(const NetworkHeader& hdr,
 
     float t_min = static_cast<float>(CONFIG_NET_HOLDBACK_MIN_MS);
     float t_max = static_cast<float>(CONFIG_NET_HOLDBACK_MAX_MS);
+
     float holdback = t_min + (t_max - t_min) * combined;
 
     uint8_t pri = hdr.priority;
-    if (pri > kMaxPriorityIndex) pri = kMaxPriorityIndex;
+    if (pri > kMaxPriorityIndex) {
+        pri = kMaxPriorityIndex;
+    }
+
     holdback *= kPriorityMultiplier[pri];
+
+    // Ensure final value stays within configured bounds
+    holdback = std::clamp(holdback, t_min, t_max);
 
     return static_cast<uint32_t>(holdback);
 }
