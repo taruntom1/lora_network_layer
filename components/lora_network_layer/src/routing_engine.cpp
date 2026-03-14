@@ -80,15 +80,30 @@ EvalResult RoutingEngine::evaluate(const NetworkHeader& hdr,
         return {Verdict::DELIVER_ONLY, 0};
     }
 
-    // 5. Directional cone check
-    if (static_cast<PropagationMode>(hdr.prop_mode) == PropagationMode::DIRECTIONAL) {
+    // 5. Propagation mode validation + directional cone check
+    PropagationMode mode = static_cast<PropagationMode>(hdr.prop_mode);
+
+    switch (mode) {
+
+    case PropagationMode::OMNI:
+        break;
+
+    case PropagationMode::DIRECTIONAL:
         if (!geo::isInsideCone(hdr.originPoint(), my_loc,
-                               hdr.target_heading,
-                               CONFIG_NET_DIRECTIONAL_HALF_ANGLE)) {
+                            hdr.target_heading,
+                            CONFIG_NET_DIRECTIONAL_HALF_ANGLE)) {
             ESP_LOGD(TAG, "Routing verdict DELIVER_ONLY msg_id=0x%08lx (outside cone)",
-                     static_cast<unsigned long>(hdr.message_id));
+                    static_cast<unsigned long>(hdr.message_id));
             return {Verdict::DELIVER_ONLY, 0};
         }
+        break;
+
+    default:
+        ESP_LOGW(TAG,
+                "Invalid prop_mode=%u msg_id=0x%08lx, delivering only",
+                hdr.prop_mode,
+                static_cast<unsigned long>(hdr.message_id));
+        return {Verdict::DELIVER_ONLY, 0};
     }
 
     // All checks passed — deliver and forward
