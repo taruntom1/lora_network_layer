@@ -8,6 +8,10 @@
 #include "link_layer_interface.h"
 #include "location_provider.h"
 
+#ifndef CONFIG_NET_FORWARDING_QUEUE_SIZE
+#define CONFIG_NET_FORWARDING_QUEUE_SIZE 8
+#endif
+
 /**
  * Fixed-size pool of pending relay slots with hold-back timers.
  *
@@ -49,6 +53,8 @@ public:
     size_t activeCount() const;
 
 private:
+    static constexpr size_t kMaxSlots = CONFIG_NET_FORWARDING_QUEUE_SIZE;
+
     struct PendingRelay {
         NetworkHeader hdr;
         uint8_t       payload[NET_MAX_APP_PAYLOAD];
@@ -57,7 +63,8 @@ private:
         bool          active;
     };
 
-    PendingRelay*       slots_;
+    PendingRelay        slots_[kMaxSlots];
+    PendingRelay        fire_buf_[kMaxSlots];
     size_t              capacity_;
     ILinkLayer&         link_;
     const ILocationProvider& loc_;
