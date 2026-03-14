@@ -51,10 +51,17 @@ NetworkManager::NetworkManager(ILinkLayer& link, ILocationProvider& loc,
 NetworkManager::~NetworkManager()
 {
     link_.setRxHandler(nullptr);
-    if (rx_task_handle_)  vTaskDelete(rx_task_handle_);
-    if (fwd_task_handle_) vTaskDelete(fwd_task_handle_);
+    stop(); // Call our new graceful stop method
     if (app_cb_mutex_)    vSemaphoreDelete(app_cb_mutex_);
     if (rx_queue_)        vQueueDelete(rx_queue_);
+}
+
+void NetworkManager::stop()
+{
+    running_.store(false); // Tell the loops to stop
+    while (rx_task_handle_ != nullptr || fwd_task_handle_ != nullptr) {
+        vTaskDelay(pdMS_TO_TICKS(10)); // Wait for tasks to exit cleanly
+    }
 }
 
 void NetworkManager::start()
@@ -164,11 +171,11 @@ void NetworkManager::fwdTaskEntry(void* arg)
 void NetworkManager::rxTaskLoop()
 {
     RxEvent evt;
-    for (;;) {
-        if (xQueueReceive(rx_queue_, &evt, portMAX_DELAY) != pdTRUE)
+    while (running_.load()) {
+        // Changed to 100ms so the task wakes up to check the running_ flag
+        if (xQueueReceive(rx_queue_, &evt, pdMS_TO_TICKS(100)) != pdTRUE)
             continue;
 
-        // Need at least a full network header.
         if (evt.len < sizeof(NetworkHeader)) continue;
 
         NetworkHeader hdr;
@@ -176,15 +183,11 @@ void NetworkManager::rxTaskLoop()
         const uint8_t* app_payload = evt.data + sizeof(NetworkHeader);
         size_t app_len = evt.len - sizeof(NetworkHeader);
 
-        // Implicit cancellation: check pending relays before routing eval.
         fwd_queue_.onDuplicateHeard(hdr);
-
-        // Run routing pipeline.
         EvalResult result = routing_.evaluate(hdr, evt.rssi, evt.snr);
 
         if (result.verdict == Verdict::DROP) continue;
 
-        // Copy callback under lock, then invoke it unlocked.
         AppRxCallback cb;
         xSemaphoreTake(app_cb_mutex_, portMAX_DELAY);
         cb = app_cb_;
@@ -194,18 +197,25 @@ void NetworkManager::rxTaskLoop()
             cb(hdr, app_payload, app_len);
         }
 
-        // Schedule relay if needed.
         if (result.verdict == Verdict::DELIVER_AND_FORWARD) {
             fwd_queue_.enqueue(hdr, app_payload, app_len, result.holdback_ms);
         }
     }
+    
+    // Clean up safely before the task exits
+    rx_task_handle_ = nullptr;
+    vTaskDelete(nullptr);
 }
 
 void NetworkManager::fwdTaskLoop()
 {
     const TickType_t kTickInterval = pdMS_TO_TICKS(10);
-    for (;;) {
+    while (running_.load()) {
         fwd_queue_.processTick();
         vTaskDelay(kTickInterval);
     }
+    
+    // Clean up safely before the task exits
+    fwd_task_handle_ = nullptr;
+    vTaskDelete(nullptr);
 }

@@ -68,10 +68,16 @@ public:
     void start();
 
     /**
+     * @brief Gracefully stops RX and forwarding tasks.
+     *
+     * Call once before destruction.
+     */
+    void stop();
+    /**
      * @brief Register the callback for messages delivered to this node.
      *
      * @param cb Application callback invoked for delivered payloads.
-     */
+     */ 
     void setAppRxCallback(AppRxCallback cb);
 
     /**
@@ -110,6 +116,7 @@ private:
 
     AppRxCallback       app_cb_;
     std::atomic<bool>   started_;  // True once runtime tasks/handlers are installed.
+    std::atomic<bool>   running_{true}; // Set false to signal tasks to stop and exit cleanly
     std::atomic<uint8_t> seq_;   // Outgoing sequence number
 
     /* FreeRTOS task entry-points (static trampolines) */
