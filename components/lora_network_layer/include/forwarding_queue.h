@@ -2,8 +2,8 @@
 
 #include <cstdint>
 #include <cstddef>
-#include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
+#include <mutex>
+#include <chrono>
 #include "network_header.h"
 #include "link_layer_interface.h"
 #include "location_provider.h"
@@ -59,7 +59,7 @@ private:
         NetworkHeader hdr;
         uint8_t       payload[NET_MAX_APP_PAYLOAD];
         size_t        payload_len;
-        TickType_t    fire_tick;
+        std::chrono::steady_clock::time_point fire_time;
         bool          active;
     };
 
@@ -68,7 +68,7 @@ private:
     size_t              capacity_;
     ILinkLayer&         link_;
     const ILocationProvider& loc_;
-    SemaphoreHandle_t   mutex_;
+    mutable std::mutex mutex_;
 
     void fireEntry(PendingRelay& entry);
 };

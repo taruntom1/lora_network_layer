@@ -1,6 +1,9 @@
 #include "network_manager.h"
-#include "esp_log.h"
+#include "net_log.h"
 #include <cstring>
+#include <chrono>
+#include <thread>
+#include <mutex>
 
 #ifndef CONFIG_NET_DUPLICATE_CACHE_SIZE
 #define CONFIG_NET_DUPLICATE_CACHE_SIZE 64
@@ -11,23 +14,7 @@
 #ifndef CONFIG_NET_RX_QUEUE_DEPTH
 #define CONFIG_NET_RX_QUEUE_DEPTH 8
 #endif
-#ifndef CONFIG_NET_RX_TASK_PRIORITY
-#define CONFIG_NET_RX_TASK_PRIORITY 5
-#endif
-#ifndef CONFIG_NET_FWD_TASK_PRIORITY
-#define CONFIG_NET_FWD_TASK_PRIORITY 4
-#endif
-#ifndef CONFIG_NET_RX_TASK_STACK
-#define CONFIG_NET_RX_TASK_STACK 4096
-#endif
-#ifndef CONFIG_NET_FWD_TASK_STACK
-#define CONFIG_NET_FWD_TASK_STACK 4096
-#endif
 
-static constexpr UBaseType_t kRxTaskPrio  = static_cast<UBaseType_t>(CONFIG_NET_RX_TASK_PRIORITY);
-static constexpr UBaseType_t kFwdTaskPrio = static_cast<UBaseType_t>(CONFIG_NET_FWD_TASK_PRIORITY);
-static constexpr uint32_t    kRxTaskStack = static_cast<uint32_t>(CONFIG_NET_RX_TASK_STACK);
-static constexpr uint32_t    kFwdTaskStack = static_cast<uint32_t>(CONFIG_NET_FWD_TASK_STACK);
 static const char* TAG = "network_manager";
 
 NetworkManager::NetworkManager(ILinkLayer& link, ILocationProvider& loc,
@@ -37,33 +24,24 @@ NetworkManager::NetworkManager(ILinkLayer& link, ILocationProvider& loc,
     , dup_filter_(cfg.duplicate_cache_size)
     , routing_(dup_filter_, loc_)
     , fwd_queue_(cfg.forwarding_queue_size, link_, loc_)
-    , rx_queue_(nullptr)
-    , rx_task_handle_(nullptr)
-    , fwd_task_handle_(nullptr)
+    , rx_queue_depth_(cfg.rx_queue_depth)
     , started_(false)
-    , app_cb_mutex_(nullptr)
     , seq_(0)
 {
-    rx_queue_ = xQueueCreate(cfg.rx_queue_depth, sizeof(RxEvent));
-    app_cb_mutex_ = xSemaphoreCreateMutex();
-    configASSERT(rx_queue_);
-    configASSERT(app_cb_mutex_);
 }
 
 NetworkManager::~NetworkManager()
 {
     link_.setRxHandler(nullptr);
-    stop(); // Call our new graceful stop method
-    if (app_cb_mutex_)    vSemaphoreDelete(app_cb_mutex_);
-    if (rx_queue_)        vQueueDelete(rx_queue_);
+    stop();
 }
 
 void NetworkManager::stop()
 {
-    running_.store(false); // Tell the loops to stop
-    while (rx_task_handle_ != nullptr || fwd_task_handle_ != nullptr) {
-        vTaskDelay(pdMS_TO_TICKS(10)); // Wait for tasks to exit cleanly
-    }
+    running_.store(false);
+    rx_queue_cv_.notify_all();  // Wake the RX thread if it is blocked waiting
+    if (rx_thread_.joinable())  rx_thread_.join();
+    if (fwd_thread_.joinable()) fwd_thread_.join();
 }
 
 void NetworkManager::start()
@@ -72,6 +50,8 @@ void NetworkManager::start()
     if (started_.exchange(true)) {
         return;
     }
+
+    running_.store(true);
 
     // Register link-layer RX handler that pushes events onto the queue.
     link_.setRxHandler([this](const uint8_t* data, size_t len,
@@ -82,39 +62,26 @@ void NetworkManager::start()
         evt.len  = copy_len;
         evt.rssi = rssi;
         evt.snr  = snr;
-        if (xQueueSendToBack(rx_queue_, &evt, 0) != pdTRUE) {  // Non-blocking
-            ESP_LOGW(TAG, "RX queue full, dropping frame len=%zu", copy_len);
+        {
+            std::lock_guard<std::mutex> lk(rx_queue_mutex_);
+            if (rx_queue_.size() >= rx_queue_depth_) {
+                NET_LOGW(TAG, "RX queue full, dropping frame len=%zu", copy_len);
+                return;
+            }
+            rx_queue_.push(evt);
         }
+        rx_queue_cv_.notify_one();
     });
 
-    BaseType_t rc = xTaskCreate(rxTaskEntry, "net_rx", kRxTaskStack, this,
-                                kRxTaskPrio, &rx_task_handle_);
-    ESP_LOGI(TAG, "RX task started");
-    if (rc != pdPASS) {
-        link_.setRxHandler(nullptr);
-        started_.store(false);
-        configASSERT(false);
-        return;
-    }
-
-    rc = xTaskCreate(fwdTaskEntry, "net_fwd", kFwdTaskStack, this,
-                     kFwdTaskPrio, &fwd_task_handle_);
-    if (rc != pdPASS) {
-        vTaskDelete(rx_task_handle_);
-        rx_task_handle_ = nullptr;
-        link_.setRxHandler(nullptr);
-        started_.store(false);
-        configASSERT(false);
-        return;
-    }
-    ESP_LOGI(TAG, "Forwarding task started");
+    rx_thread_  = std::thread(&NetworkManager::rxTaskLoop, this);
+    fwd_thread_ = std::thread(&NetworkManager::fwdTaskLoop, this);
+    NET_LOGI(TAG, "RX and forwarding threads started");
 }
 
 void NetworkManager::setAppRxCallback(AppRxCallback cb)
 {
-    xSemaphoreTake(app_cb_mutex_, portMAX_DELAY);
+    std::lock_guard<std::mutex> lock(app_cb_mutex_);
     app_cb_ = std::move(cb);
-    xSemaphoreGive(app_cb_mutex_);
 }
 
 int NetworkManager::sendMessage(Priority priority, PropagationMode mode,
@@ -162,25 +129,18 @@ int NetworkManager::sendMessage(Priority priority, PropagationMode mode,
     return static_cast<int>(NetworkError::Ok);
 }
 
-/* ---- Task entry points ---- */
-
-void NetworkManager::rxTaskEntry(void* arg)
-{
-    static_cast<NetworkManager*>(arg)->rxTaskLoop();
-}
-
-void NetworkManager::fwdTaskEntry(void* arg)
-{
-    static_cast<NetworkManager*>(arg)->fwdTaskLoop();
-}
-
 void NetworkManager::rxTaskLoop()
 {
-    RxEvent evt;
     while (running_.load()) {
-        // Changed to 100ms so the task wakes up to check the running_ flag
-        if (xQueueReceive(rx_queue_, &evt, pdMS_TO_TICKS(100)) != pdTRUE)
-            continue;
+        RxEvent evt;
+        {
+            std::unique_lock<std::mutex> lk(rx_queue_mutex_);
+            rx_queue_cv_.wait_for(lk, std::chrono::milliseconds(100),
+                                  [this] { return !rx_queue_.empty() || !running_.load(); });
+            if (rx_queue_.empty()) continue;
+            evt = rx_queue_.front();
+            rx_queue_.pop();
+        }
 
         if (evt.len < sizeof(NetworkHeader)) continue;
 
@@ -193,45 +153,37 @@ void NetworkManager::rxTaskLoop()
         EvalResult result = routing_.evaluate(hdr, evt.rssi, evt.snr);
 
         if (result.verdict == Verdict::DROP) {
-            ESP_LOGD(TAG, "Dropping msg_id=0x%08lx by routing verdict",
+            NET_LOGD(TAG, "Dropping msg_id=0x%08lx by routing verdict",
                      static_cast<unsigned long>(hdr.message_id));
             continue;
         }
 
         AppRxCallback cb;
-        xSemaphoreTake(app_cb_mutex_, portMAX_DELAY);
-        cb = app_cb_;
-        xSemaphoreGive(app_cb_mutex_);
+        {
+            std::lock_guard<std::mutex> lock(app_cb_mutex_);
+            cb = app_cb_;
+        }
 
         if (cb) {
             cb(hdr, app_payload, app_len);
         }
 
         if (result.verdict == Verdict::DELIVER_AND_FORWARD) {
-            ESP_LOGD(TAG, "Scheduling relay msg_id=0x%08lx holdback_ms=%lu",
+            NET_LOGD(TAG, "Scheduling relay msg_id=0x%08lx holdback_ms=%lu",
                      static_cast<unsigned long>(hdr.message_id),
                      static_cast<unsigned long>(result.holdback_ms));
             if (!fwd_queue_.enqueue(hdr, app_payload, app_len, result.holdback_ms)) {
-                ESP_LOGW(TAG, "Forwarding queue full, dropped relay msg_id=0x%08lx",
+                NET_LOGW(TAG, "Forwarding queue full, dropped relay msg_id=0x%08lx",
                          static_cast<unsigned long>(hdr.message_id));
             }
         }
     }
-    
-    // Clean up safely before the task exits
-    rx_task_handle_ = nullptr;
-    vTaskDelete(nullptr);
 }
 
 void NetworkManager::fwdTaskLoop()
 {
-    const TickType_t kTickInterval = pdMS_TO_TICKS(10);
     while (running_.load()) {
         fwd_queue_.processTick();
-        vTaskDelay(kTickInterval);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    
-    // Clean up safely before the task exits
-    fwd_task_handle_ = nullptr;
-    vTaskDelete(nullptr);
 }

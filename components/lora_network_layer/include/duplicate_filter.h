@@ -2,8 +2,7 @@
 
 #include <cstdint>
 #include <cstddef>
-#include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
+#include <mutex>
 
 /**
  * Fixed-size LRU duplicate cache.
@@ -41,7 +40,7 @@ private:
     Entry*          entries_;
     size_t          capacity_;
     uint32_t        tick_;          // monotonic counter for LRU
-    SemaphoreHandle_t mutex_;
+    mutable std::mutex mutex_;
 
     /** Find the index of the oldest (smallest tick) used entry. */
     size_t findOldest() const;

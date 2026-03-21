@@ -35,32 +35,8 @@ menu "LoRa Network Layer"
         int "RX event queue depth"
         default 8
         help
-            Depth of the FreeRTOS queue between the link-layer callback and
-            the network RX task.
-
-    config NET_RX_TASK_PRIORITY
-        int "RX task priority"
-        default 5
-        help
-            FreeRTOS priority for the network RX processing task.
-
-    config NET_FWD_TASK_PRIORITY
-        int "Forwarding task priority"
-        default 4
-        help
-            FreeRTOS priority for the forwarding-timer processing task.
-
-    config NET_RX_TASK_STACK
-        int "RX task stack size (bytes)"
-        default 4096
-        help
-            Stack size in bytes allocated to the network RX task.
-
-    config NET_FWD_TASK_STACK
-        int "Forwarding task stack size (bytes)"
-        default 4096
-        help
-            Stack size in bytes allocated to the forwarding task.
+            Maximum number of RX events buffered between the link-layer
+            callback and the network RX thread.
 
     config NET_DIRECTIONAL_HALF_ANGLE
         int "Directional cone half-angle (0.01 deg)"

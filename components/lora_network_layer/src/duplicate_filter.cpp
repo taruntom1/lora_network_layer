@@ -1,5 +1,6 @@
 #include "duplicate_filter.h"
 #include <cstring>
+#include <mutex>
 
 DuplicateFilter::DuplicateFilter(size_t capacity)
     : capacity_(capacity)
@@ -7,26 +8,22 @@ DuplicateFilter::DuplicateFilter(size_t capacity)
 {
     entries_ = new Entry[capacity_];
     std::memset(entries_, 0, sizeof(Entry) * capacity_);
-    mutex_ = xSemaphoreCreateMutex();
-    configASSERT(mutex_);
 }
 
 DuplicateFilter::~DuplicateFilter()
 {
-    vSemaphoreDelete(mutex_);
     delete[] entries_;
 }
 
 bool DuplicateFilter::isDuplicate(uint32_t id)
 {
-    xSemaphoreTake(mutex_, portMAX_DELAY);
+    std::lock_guard<std::mutex> lock(mutex_);
 
     // Search for an existing entry with this id.
     for (size_t i = 0; i < capacity_; ++i) {
         if (entries_[i].used && entries_[i].id == id) {
             // Refresh LRU tick
             entries_[i].timestamp = ++tick_;
-            xSemaphoreGive(mutex_);
             return true;
         }
     }
@@ -36,7 +33,6 @@ bool DuplicateFilter::isDuplicate(uint32_t id)
     for (size_t i = 0; i < capacity_; ++i) {
         if (!entries_[i].used) {
             entries_[i] = {id, ++tick_, true};
-            xSemaphoreGive(mutex_);
             return false;
         }
     }
@@ -44,18 +40,16 @@ bool DuplicateFilter::isDuplicate(uint32_t id)
     // No empty slot — evict the oldest entry.
     size_t oldest = findOldest();
     entries_[oldest] = {id, ++tick_, true};
-    xSemaphoreGive(mutex_);
     return false;
 }
 
 void DuplicateFilter::markSeen(uint32_t id)
 {
-    xSemaphoreTake(mutex_, portMAX_DELAY);
+    std::lock_guard<std::mutex> lock(mutex_);
 
     for (size_t i = 0; i < capacity_; ++i) {
         if (entries_[i].used && entries_[i].id == id) {
             entries_[i].timestamp = ++tick_;
-            xSemaphoreGive(mutex_);
             return;
         }
     }
@@ -64,24 +58,21 @@ void DuplicateFilter::markSeen(uint32_t id)
     for (size_t i = 0; i < capacity_; ++i) {
         if (!entries_[i].used) {
             entries_[i] = {id, ++tick_, true};
-            xSemaphoreGive(mutex_);
             return;
         }
     }
 
     size_t oldest = findOldest();
     entries_[oldest] = {id, ++tick_, true};
-    xSemaphoreGive(mutex_);
 }
 
 size_t DuplicateFilter::size() const
 {
-    xSemaphoreTake(mutex_, portMAX_DELAY);
+    std::lock_guard<std::mutex> lock(mutex_);
     size_t count = 0;
     for (size_t i = 0; i < capacity_; ++i) {
         if (entries_[i].used) ++count;
     }
-    xSemaphoreGive(mutex_);
     return count;
 }
 
