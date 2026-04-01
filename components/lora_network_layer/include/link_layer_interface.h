@@ -8,7 +8,8 @@
 
 /**
  * Raw frame received from the link layer.
- * Stored in a FreeRTOS queue so the radio-task context is never blocked.
+ * Buffered in the network manager's RX queue between the radio callback
+ * and the RX processing thread.
  */
 struct RxEvent {
     uint8_t  data[LORA_MAX_PAYLOAD];

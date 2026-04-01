@@ -4,10 +4,10 @@
 #include <cstddef>
 #include <atomic>
 #include <functional>
-#include "freertos/FreeRTOS.h"
-#include "freertos/queue.h"
-#include "freertos/semphr.h"
-#include "freertos/task.h"
+#include <mutex>
+#include <thread>
+#include <queue>
+#include <condition_variable>
 #include "network_header.h"
 #include "link_layer_interface.h"
 #include "location_provider.h"
@@ -30,10 +30,10 @@ enum class NetworkError : int {
 };
 
 /**
- * @brief Coordinates the network-layer pipeline and runtime tasks.
+ * @brief Coordinates the network-layer pipeline and runtime threads.
  *
  * The manager wires the link adapter, location provider, duplicate filter,
- * routing engine, and forwarding queue together. It runs two FreeRTOS tasks:
+ * routing engine, and forwarding queue together. It runs two threads:
  * one for RX processing and one for forwarding-timeout handling.
  */
 class NetworkManager {
@@ -109,19 +109,20 @@ private:
     RoutingEngine       routing_;
     ForwardingQueue     fwd_queue_;
 
-    QueueHandle_t       rx_queue_;
-    TaskHandle_t        rx_task_handle_;
-    TaskHandle_t        fwd_task_handle_;
-    SemaphoreHandle_t   app_cb_mutex_;
+    std::queue<RxEvent>     rx_queue_;
+    size_t                  rx_queue_depth_;
+    std::mutex              rx_queue_mutex_;
+    std::condition_variable rx_queue_cv_;
+
+    std::thread         rx_thread_;
+    std::thread         fwd_thread_;
+
+    std::mutex          app_cb_mutex_;
 
     AppRxCallback       app_cb_;
-    std::atomic<bool>   started_;  // True once runtime tasks/handlers are installed.
-    std::atomic<bool>   running_{true}; // Set false to signal tasks to stop and exit cleanly
+    std::atomic<bool>   started_;  // True once runtime threads/handlers are installed.
+    std::atomic<bool>   running_{true}; // Set false to signal threads to stop and exit cleanly
     std::atomic<uint8_t> seq_;   // Outgoing sequence number
-
-    /* FreeRTOS task entry-points (static trampolines) */
-    static void rxTaskEntry(void* arg);
-    static void fwdTaskEntry(void* arg);
 
     void rxTaskLoop();
     void fwdTaskLoop();

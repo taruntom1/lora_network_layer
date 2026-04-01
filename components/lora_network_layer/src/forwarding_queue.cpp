@@ -1,8 +1,11 @@
 #include "forwarding_queue.h"
-#include "esp_log.h"
+#include "net_log.h"
 #include "geo_utils.h"
 #include <cstring>
 #include <algorithm>
+#include <cassert>
+#include <mutex>
+#include <chrono>
 
 #ifndef CONFIG_NET_BETWEENNESS_THRESHOLD_M
 #define CONFIG_NET_BETWEENNESS_THRESHOLD_M 100
@@ -16,24 +19,17 @@ ForwardingQueue::ForwardingQueue(size_t capacity, ILinkLayer& link,
     , link_(link)
     , loc_(loc)
 {
-    // Runtime capacity can be <= compile-time storage limit.
-    configASSERT(capacity_ <= kMaxSlots);
+    // Runtime capacity must not exceed the compile-time storage limit.
+    assert(capacity_ <= kMaxSlots);
     for (size_t i = 0; i < capacity_; ++i) {
         slots_[i].active = false;
     }
-    mutex_ = xSemaphoreCreateMutex();
-    configASSERT(mutex_);
-}
-
-ForwardingQueue::~ForwardingQueue()
-{
-    vSemaphoreDelete(mutex_);
 }
 
 bool ForwardingQueue::enqueue(const NetworkHeader& hdr, const uint8_t* payload,
                               size_t payload_len, uint32_t holdback_ms)
 {
-    xSemaphoreTake(mutex_, portMAX_DELAY);
+    std::lock_guard<std::mutex> lock(mutex_);
 
     // Find a free slot.
     PendingRelay* slot = nullptr;
@@ -59,9 +55,8 @@ bool ForwardingQueue::enqueue(const NetworkHeader& hdr, const uint8_t* payload,
     }
 
     if (!slot) {
-        ESP_LOGW(TAG, "Forwarding queue full, drop msg_id=0x%08lx",
+        NET_LOGW(TAG, "Forwarding queue full, drop msg_id=0x%08lx",
                  static_cast<unsigned long>(hdr.message_id));
-        xSemaphoreGive(mutex_);
         return false;
     }
 
@@ -70,28 +65,28 @@ bool ForwardingQueue::enqueue(const NetworkHeader& hdr, const uint8_t* payload,
                         ? payload_len : NET_MAX_APP_PAYLOAD;
     std::memcpy(slot->payload, payload, copy_len);
     slot->payload_len = copy_len;
-    slot->fire_tick = xTaskGetTickCount() +
-                      pdMS_TO_TICKS(holdback_ms);
+    slot->fire_time = std::chrono::steady_clock::now() +
+                      std::chrono::milliseconds(holdback_ms);
     slot->active = true;
 
-    xSemaphoreGive(mutex_);
     return true;
 }
 
 void ForwardingQueue::processTick()
 {
-    TickType_t now = xTaskGetTickCount();
+    auto now = std::chrono::steady_clock::now();
     size_t due_count = 0;
 
-    xSemaphoreTake(mutex_, portMAX_DELAY);
-    for (size_t i = 0; i < capacity_; ++i) {
-        if (slots_[i].active && now >= slots_[i].fire_tick) {
-            // Snapshot due entries while locked, then send after unlock.
-            fire_buf_[due_count++] = slots_[i];
-            slots_[i].active = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (size_t i = 0; i < capacity_; ++i) {
+            if (slots_[i].active && now >= slots_[i].fire_time) {
+                // Snapshot due entries while locked, then send after unlock.
+                fire_buf_[due_count++] = slots_[i];
+                slots_[i].active = false;
+            }
         }
     }
-    xSemaphoreGive(mutex_);
 
     for (size_t i = 0; i < due_count; ++i) {
         fireEntry(fire_buf_[i]);
@@ -102,7 +97,7 @@ void ForwardingQueue::onDuplicateHeard(const NetworkHeader& heard_hdr)
 {
     GeoPoint my_loc = loc_.getLocation();
 
-    xSemaphoreTake(mutex_, portMAX_DELAY);
+    std::lock_guard<std::mutex> lock(mutex_);
     for (size_t i = 0; i < capacity_; ++i) {
         if (!slots_[i].active) continue;
         if (slots_[i].hdr.message_id != heard_hdr.message_id) continue;
@@ -114,17 +109,15 @@ void ForwardingQueue::onDuplicateHeard(const NetworkHeader& heard_hdr)
             slots_[i].active = false;  // Implicit cancellation
         }
     }
-    xSemaphoreGive(mutex_);
 }
 
 size_t ForwardingQueue::activeCount() const
 {
-    xSemaphoreTake(mutex_, portMAX_DELAY);
+    std::lock_guard<std::mutex> lock(mutex_);
     size_t count = 0;
     for (size_t i = 0; i < capacity_; ++i) {
         if (slots_[i].active) ++count;
     }
-    xSemaphoreGive(mutex_);
     return count;
 }
 
@@ -147,7 +140,7 @@ void ForwardingQueue::fireEntry(PendingRelay& entry)
     std::memcpy(buf + sizeof(NetworkHeader), entry.payload, entry.payload_len);
     size_t total = sizeof(NetworkHeader) + entry.payload_len;
 
-    ESP_LOGD(TAG, "Relay TX msg_id=0x%08lx bytes=%zu hops_remaining=%u",
+    NET_LOGD(TAG, "Relay TX msg_id=0x%08lx bytes=%zu hops_remaining=%u",
              static_cast<unsigned long>(entry.hdr.message_id),
              total,
              entry.hdr.hops_remaining);
