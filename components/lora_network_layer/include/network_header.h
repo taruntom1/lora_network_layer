@@ -32,12 +32,19 @@ static constexpr uint8_t  NET_MSG_TYPE     = 0x10;
 /** Maximum LoRa payload size in bytes. */
 static constexpr size_t   LORA_MAX_PAYLOAD = 247;
 
+#if defined(_MSC_VER)
+#  define NET_PACKED
+#  pragma pack(push, 1)
+#else
+#  define NET_PACKED __attribute__((packed))
+#endif
+
 /**
  * 45-byte packed network header transmitted over the air.
  *
  * All multi-byte fields are little-endian (native on ESP32).
  */
-struct __attribute__((packed)) NetworkHeader {
+struct NET_PACKED NetworkHeader {
     uint32_t message_id;       // (origin_nodeId << 16) | sequence
     uint8_t  priority;         // Priority enum
     uint32_t timestamp;        // Epoch seconds (32-bit)
@@ -67,6 +74,12 @@ struct __attribute__((packed)) NetworkHeader {
     void setOriginPoint(GeoPoint p) { origin_lat = p.lat; origin_lon = p.lon; }
     void setTxPoint(GeoPoint p)     { tx_lat = p.lat; tx_lon = p.lon; }
 };
+
+#if defined(_MSC_VER)
+#  pragma pack(pop)
+#endif
+
+#undef NET_PACKED
 
 static_assert(sizeof(NetworkHeader) == 45, "NetworkHeader must be exactly 45 bytes");
 

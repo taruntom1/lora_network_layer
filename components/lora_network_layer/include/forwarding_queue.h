@@ -22,7 +22,7 @@ class ForwardingQueue {
 public:
     ForwardingQueue(size_t capacity, ILinkLayer& link,
                     const ILocationProvider& loc);
-    ~ForwardingQueue();
+    ~ForwardingQueue() = default;
 
     ForwardingQueue(const ForwardingQueue&) = delete;
     ForwardingQueue& operator=(const ForwardingQueue&) = delete;

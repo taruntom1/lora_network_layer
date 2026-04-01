@@ -1,0 +1,40 @@
+runtime:
+  carrier_freq_mhz: 868.0
+  start_time_s: 1000
+  duplicate_cache_size: 64
+  forwarding_queue_size: 8
+  rx_queue_depth: 16
+
+devices:
+  - id: 4097
+    lat: 125000000
+    lon: 773000000
+    speed_cm_s: 80
+    heading_cdeg: 9000
+    tx_power_dbm: 14.0
+    noise_floor_dbm: -110.0
+    sensitivity_dbm: -118.0
+    waypoints:
+      - at_s: 1003
+        lat: 125001000
+        lon: 773002000
+        speed_cm_s: 90
+        heading_cdeg: 4500
+
+  - id: 4098
+    lat: 125005000
+    lon: 773005000
+    speed_cm_s: 40
+    heading_cdeg: 18000
+    tx_power_dbm: 14.0
+    noise_floor_dbm: -110.0
+    sensitivity_dbm: -118.0
+
+  - id: 4099
+    lat: 125030000
+    lon: 773030000
+    speed_cm_s: 0
+    heading_cdeg: 0
+    tx_power_dbm: 14.0
+    noise_floor_dbm: -110.0
+    sensitivity_dbm: -118.0

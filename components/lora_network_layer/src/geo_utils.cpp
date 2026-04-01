@@ -4,8 +4,9 @@
 
 namespace geo {
 
-static constexpr double kDegToRad = M_PI / 180.0;
-static constexpr double kRadToDeg = 180.0 / M_PI;
+static constexpr double kPi       = 3.14159265358979323846;
+static constexpr double kDegToRad = kPi / 180.0;
+static constexpr double kRadToDeg = 180.0 / kPi;
 static constexpr double kEarthR   = 6371000.0; // metres
 
 /** Convert fixed-point ×1e7 integer to radians. */
