@@ -1,0 +1,25 @@
+# This is a lightweight schema/reference for the custom YAML subset parsed by ConfigLoader.
+# Indentation must use 2 spaces.
+
+runtime:
+  carrier_freq_mhz: <float>
+  start_time_s: <uint32>
+  duplicate_cache_size: <size_t>
+  forwarding_queue_size: <size_t>
+  rx_queue_depth: <size_t>
+
+devices:
+  - id: <uint16>
+    lat: <int32_fixed_point_1e7>
+    lon: <int32_fixed_point_1e7>
+    speed_cm_s: <uint16>
+    heading_cdeg: <uint16>
+    tx_power_dbm: <float>
+    noise_floor_dbm: <float>
+    sensitivity_dbm: <float>
+    waypoints:
+      - at_s: <uint32>
+        lat: <int32_fixed_point_1e7>
+        lon: <int32_fixed_point_1e7>
+        speed_cm_s: <uint16>
+        heading_cdeg: <uint16>

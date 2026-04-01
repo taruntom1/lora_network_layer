@@ -3,17 +3,18 @@ PROJECT_BRIEF          = "V2X LoRa multi-hop network layer for ESP-IDF"
 OUTPUT_DIRECTORY       = docs/build
 CREATE_SUBDIRS         = NO
 
-INPUT                  = components/lora_network_layer/include docs
-FILE_PATTERNS          = *.h *.hpp *.md
+INPUT                  = components/lora_network_layer/include docs simulation/include simulation/src simulation/tests/include simulation/docs
+FILE_PATTERNS          = *.h *.hpp *.cpp *.md
 RECURSIVE              = YES
+EXCLUDE                = docs/build
 
 USE_MDFILE_AS_MAINPAGE = docs/mainpage.md
 MARKDOWN_SUPPORT       = YES
 
 OPTIMIZE_OUTPUT_FOR_C  = NO
 EXTRACT_ALL            = YES
-EXTRACT_PRIVATE        = NO
-EXTRACT_STATIC         = NO
+EXTRACT_PRIVATE        = YES
+EXTRACT_STATIC         = YES
 
 GENERATE_HTML          = YES
 HTML_OUTPUT            = html

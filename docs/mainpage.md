@@ -23,6 +23,9 @@ directory:
 Also see the [Network Layer Architecture](architecture.md) page for a
 high-level module and data-flow overview.
 
+For host-side simulation internals and APIs, see the
+[Host Simulation Architecture](../simulation/docs/simulation_architecture.md) page.
+
 ## Notes
 
 This page is configured as the Doxygen main page via

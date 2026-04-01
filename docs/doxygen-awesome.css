@@ -1,0 +1,6 @@
+/* Minimal stylesheet placeholder for Doxygen HTML output.
+ * Replace with a full theme file if desired.
+ */
+:root {
+    --toc-max-height: 80vh;
+}
