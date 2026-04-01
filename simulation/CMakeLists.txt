@@ -6,11 +6,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-if(MSVC)
-    add_compile_options(/W4 /permissive-)
-else()
-    add_compile_options(-Wall -Wextra -Wpedantic)
-endif()
+add_compile_options(-Wall -Wextra -Wpedantic)
 
 option(SIM_BUILD_DEMO "Build simulation demo executable" ON)
 option(SIM_BUILD_TESTS "Build simulation tests" ON)
@@ -36,6 +32,8 @@ target_compile_features(lora_network_core PUBLIC cxx_std_17)
 
 add_library(network_simulation STATIC
     src/simulation_clock.cpp
+    src/simulation_event_queue.cpp
+    src/simulation_metrics.cpp
     src/simulated_location_provider.cpp
     src/simulated_link_layer.cpp
     src/simulated_network.cpp

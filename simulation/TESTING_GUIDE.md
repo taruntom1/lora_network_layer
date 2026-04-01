@@ -20,28 +20,20 @@ The simulation project builds and runs the real network-layer core against host-
 
 From repository root.
 
-### 2.1 Configure + build tests (MSVC)
+### 2.1 Configure + build tests (MinGW)
 
 ```powershell
-cmake -S simulation -B simulation/build-msvc -G "Visual Studio 17 2022" -A x64 -DSIM_BUILD_TESTS=ON
-cmake --build simulation/build-msvc --config Debug --target simulation_phase3_tests simulation_phase4_tests simulation_phase5_tests
-```
-
-### 2.2 Run tests (MSVC)
-
-```powershell
-ctest --test-dir simulation/build-msvc -C Debug --output-on-failure
-```
-
-### 2.3 Configure + build tests (Ninja fallback)
-
-```powershell
-cmake -S simulation -B simulation/build -G Ninja -DSIM_BUILD_TESTS=ON
+cmake -S simulation -B simulation/build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DSIM_BUILD_TESTS=ON
 cmake --build simulation/build --target simulation_phase3_tests simulation_phase4_tests simulation_phase5_tests -j
+```
+
+### 2.2 Run tests
+
+```powershell
 ctest --test-dir simulation/build --output-on-failure
 ```
 
-### 2.4 Run one phase only
+### 2.3 Run one phase only
 
 ```powershell
 ctest --test-dir simulation/build --output-on-failure -R simulation_phase4_tests

@@ -26,9 +26,32 @@ struct SimulationScenario::NodeRuntime {
 };
 
 SimulationScenario::SimulationScenario(const SimulationConfig& config)
-    : network_(config.runtime.carrier_freq_mhz)
+    : network_(config.runtime.carrier_freq_mhz,
+               config.runtime.compatibility_immediate_delivery)
 {
+    network_.configureMac(config.runtime.data_rate_bps,
+                          config.runtime.slot_time_us,
+                          config.runtime.difs_us,
+                          config.runtime.max_retries,
+                          config.runtime.propagation_min_delay_us,
+                          config.runtime.cw_min,
+                          config.runtime.cw_max,
+                          config.runtime.random_seed,
+                          config.runtime.enable_collision_model,
+                          static_cast<uint8_t>(config.runtime.per_model),
+                          config.runtime.snr_threshold_db,
+                          config.runtime.per_logistic_k,
+                          config.runtime.per_logistic_mid_db,
+                          config.runtime.fading_stddev_db,
+                          config.runtime.noise_jitter_db,
+                          config.runtime.enable_congestion_drops,
+                          config.runtime.congestion_utilization_threshold_pct,
+                          config.runtime.congestion_drop_probability,
+                          config.runtime.congestion_min_elapsed_us);
+
     clock_.reset(static_cast<uint64_t>(config.runtime.start_time_s) * 1000ULL);
+    network_.setNowUs(clock_.nowMs() * 1000ULL);
+    network_.resetMetrics(clock_.nowMs() * 1000ULL);
 
     for (const SimulationDeviceConfig& device_cfg : config.devices) {
         if (nodes_.find(device_cfg.node_id) != nodes_.end()) {
@@ -102,6 +125,10 @@ void SimulationScenario::stop()
 
 void SimulationScenario::step(uint64_t delta_ms)
 {
+    const uint64_t step_begin_us = clock_.nowMs() * 1000ULL;
+    network_.setNowUs(step_begin_us);
+    network_.processUntil(step_begin_us);
+
     clock_.step(delta_ms);
 
     for (auto& [_, node] : nodes_) {
@@ -111,6 +138,10 @@ void SimulationScenario::step(uint64_t delta_ms)
     for (auto& [_, node] : nodes_) {
         applyDueWaypoints(*node);
     }
+
+    const uint64_t step_end_us = clock_.nowMs() * 1000ULL;
+    network_.setNowUs(step_end_us);
+    network_.processUntil(step_end_us);
 }
 
 size_t SimulationScenario::deviceCount() const
@@ -183,6 +214,16 @@ std::vector<uint16_t> SimulationScenario::nodeIds() const
     }
     std::sort(ids.begin(), ids.end());
     return ids;
+}
+
+SimulationMetricsSnapshot SimulationScenario::metrics() const
+{
+    return network_.metricsSnapshot(clock_.nowMs() * 1000ULL);
+}
+
+void SimulationScenario::resetMetrics()
+{
+    network_.resetMetrics(clock_.nowMs() * 1000ULL);
 }
 
 void SimulationScenario::applyDueWaypoints(NodeRuntime& node)

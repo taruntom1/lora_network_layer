@@ -24,35 +24,17 @@ For a full guide on writing your own simulation tests, see:
 - `simulation/TESTING_GUIDE.md`
 - `simulation/docs/simulation_architecture.md` (Doxygen architecture and API/internal behavior docs)
 
-## Build with MSVC
+## Build with MinGW
 
 From repository root:
 
 1. Configure
 
-   cmake -S simulation -B simulation/build-msvc -G "Visual Studio 17 2022" -A x64
+   cmake -S simulation -B simulation/build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
 
 2. Build
 
-   cmake --build simulation/build-msvc --config Debug --target simulation_demo
-
-3. Run
-
-   simulation/build-msvc/Debug/simulation_demo.exe
-
-4. Run with a config file
-
-   simulation/build-msvc/Debug/simulation_demo.exe simulation/config/example_network.yml
-
-## Build with Ninja (fallback)
-
-1. Configure
-
-   cmake -S simulation -B simulation/build -G Ninja
-
-2. Build
-
-   cmake --build simulation/build -j
+   cmake --build simulation/build --target simulation_demo -j
 
 3. Run
 
@@ -66,7 +48,7 @@ From repository root:
 
 1. Configure
 
-   cmake -S simulation -B simulation/build -G Ninja -DSIM_BUILD_TESTS=ON
+   cmake -S simulation -B simulation/build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DSIM_BUILD_TESTS=ON
 
 2. Build tests
 
@@ -84,7 +66,7 @@ From repository root:
 
 1. Configure
 
-   cmake -S simulation -B simulation/build -G Ninja -DSIM_BUILD_TESTS=ON
+   cmake -S simulation -B simulation/build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DSIM_BUILD_TESTS=ON
 
 2. Build tests
 
@@ -102,7 +84,7 @@ From repository root:
 
 1. Configure
 
-   cmake -S simulation -B simulation/build -G Ninja -DSIM_BUILD_TESTS=ON
+   cmake -S simulation -B simulation/build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DSIM_BUILD_TESTS=ON
 
 2. Build tests
 

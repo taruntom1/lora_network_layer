@@ -111,6 +111,12 @@ SimulationConfig makeStressConfig(size_t node_count,
 
 using Snapshot = std::unordered_map<uint16_t, std::array<uint64_t, 2>>;
 
+struct StochasticRunSummary {
+    uint64_t received_count{0};
+    uint64_t received_hash{0};
+    uint64_t tx_fail_per{0};
+};
+
 Snapshot captureSnapshot(const SimulationTestBase& test)
 {
     Snapshot out;
@@ -203,6 +209,198 @@ Snapshot runRepeatableWorkload()
     Snapshot snapshot = captureSnapshot(test);
     test.stop();
     return snapshot;
+}
+
+SimulationConfig makeStochasticPerConfig(uint64_t seed)
+{
+    SimulationConfig cfg;
+    cfg.runtime.carrier_freq_mhz = 868.0f;
+    cfg.runtime.start_time_s = 2200;
+    cfg.runtime.network_config = NetworkConfig{128, 8, 64};
+    cfg.runtime.compatibility_immediate_delivery = false;
+    cfg.runtime.random_seed = seed;
+    cfg.runtime.data_rate_bps = 400000;
+    cfg.runtime.slot_time_us = 1000;
+    cfg.runtime.difs_us = 0;
+    cfg.runtime.cw_min = 1;
+    cfg.runtime.cw_max = 15;
+    cfg.runtime.max_retries = 4;
+    cfg.runtime.propagation_min_delay_us = 0;
+    cfg.runtime.enable_collision_model = false;
+    cfg.runtime.enable_congestion_drops = false;
+    cfg.runtime.per_model = SimulationRuntimeConfig::PerModel::Logistic;
+    cfg.runtime.per_logistic_k = 0.9f;
+    cfg.runtime.per_logistic_mid_db = 10.0f;
+    cfg.runtime.fading_stddev_db = 1.0f;
+    cfg.runtime.noise_jitter_db = 0.5f;
+
+    cfg.devices.push_back(makeDevice(kNodeBase,
+                                     kBasePoint,
+                                     14.0f,
+                                     -120.0f,
+                                     0,
+                                     0));
+
+    // ~13.3 km north gives SNR near the logistic midpoint for meaningful randomness.
+    cfg.devices.push_back(makeDevice(static_cast<uint16_t>(kNodeBase + 1),
+                                     GeoPoint{126200000, 773000000},
+                                     14.0f,
+                                     -120.0f,
+                                     0,
+                                     0));
+    return cfg;
+}
+
+StochasticRunSummary runStochasticPerWorkload(uint64_t seed)
+{
+    SimulationBuilder builder;
+    builder.setConfig(makeStochasticPerConfig(seed));
+
+    SimulationTestBase test(builder.build());
+    test.start();
+
+    const uint16_t src = kNodeBase;
+    const uint16_t dst = static_cast<uint16_t>(kNodeBase + 1);
+    constexpr size_t kMessageCount = 80;
+
+    for (size_t i = 0; i < kMessageCount; ++i) {
+        const std::vector<uint8_t> payload = {
+            static_cast<uint8_t>(i & 0xFF),
+            static_cast<uint8_t>((i * 3) & 0xFF),
+            0xAA,
+            0x55,
+        };
+
+        const int rc = test.sendFromDevice(src,
+                                           payload,
+                                           Priority::NORMAL,
+                                           PropagationMode::OMNI,
+                                           0,
+                                           0,
+                                           60000,
+                                           60);
+        expectEqInt(rc, static_cast<int>(NetworkError::Ok),
+                    "stochastic PER workload send should succeed");
+        test.scenario().step(6);
+    }
+
+    test.stepUntil([]() { return false; }, 2000, 10, 1);
+
+    const std::vector<CapturedMessage> msgs = test.receivedMessages(dst);
+    uint64_t hash = 1469598103934665603ULL;
+    for (const CapturedMessage& msg : msgs) {
+        hash ^= static_cast<uint64_t>(msg.header.message_id);
+        hash *= 1099511628211ULL;
+        for (uint8_t b : msg.payload) {
+            hash ^= static_cast<uint64_t>(b);
+            hash *= 1099511628211ULL;
+        }
+    }
+
+    const SimulationMetricsSnapshot metrics = test.scenario().metrics();
+    StochasticRunSummary summary;
+    summary.received_count = static_cast<uint64_t>(msgs.size());
+    summary.received_hash = hash;
+    summary.tx_fail_per = metrics.tx_fail_per;
+
+    test.stop();
+    return summary;
+}
+
+void testStochasticPerSameSeedIsRepeatable()
+{
+    const StochasticRunSummary first = runStochasticPerWorkload(1337);
+    const StochasticRunSummary second = runStochasticPerWorkload(1337);
+
+    expectTrue(first.received_count == second.received_count,
+               "same-seed stochastic workload should keep identical receive counts");
+    expectTrue(first.received_hash == second.received_hash,
+               "same-seed stochastic workload should keep identical receive hashes");
+    expectTrue(first.tx_fail_per == second.tx_fail_per,
+               "same-seed stochastic workload should keep identical PER-failure counters");
+}
+
+void testStochasticPerDifferentSeedsDiverge()
+{
+    const StochasticRunSummary seed_a = runStochasticPerWorkload(1001);
+    const StochasticRunSummary seed_b = runStochasticPerWorkload(2002);
+
+    const bool count_differs = seed_a.received_count != seed_b.received_count;
+    const bool hash_differs = seed_a.received_hash != seed_b.received_hash;
+    const bool per_differs = seed_a.tx_fail_per != seed_b.tx_fail_per;
+
+    expectTrue(count_differs || hash_differs || per_differs,
+               "different seeds should diverge in stochastic PER outcomes");
+}
+
+void testCongestionThresholdPreventsDropsUnderLightLoad()
+{
+    SimulationConfig cfg;
+    cfg.runtime.carrier_freq_mhz = 868.0f;
+    cfg.runtime.start_time_s = 2400;
+    cfg.runtime.network_config = NetworkConfig{128, 8, 64};
+    cfg.runtime.compatibility_immediate_delivery = false;
+    cfg.runtime.random_seed = 7;
+    cfg.runtime.data_rate_bps = 1000000;
+    cfg.runtime.slot_time_us = 1000;
+    cfg.runtime.difs_us = 0;
+    cfg.runtime.cw_min = 1;
+    cfg.runtime.cw_max = 15;
+    cfg.runtime.max_retries = 4;
+    cfg.runtime.enable_collision_model = false;
+    cfg.runtime.enable_congestion_drops = true;
+    cfg.runtime.congestion_utilization_threshold_pct = 99.0f;
+    cfg.runtime.congestion_drop_probability = 1.0f;
+    cfg.runtime.congestion_min_elapsed_us = 500000;
+    cfg.runtime.per_model = SimulationRuntimeConfig::PerModel::Disabled;
+
+    cfg.devices.push_back(makeDevice(kNodeBase, kBasePoint, 14.0f, -118.0f, 0, 0));
+    cfg.devices.push_back(makeDevice(static_cast<uint16_t>(kNodeBase + 1),
+                                     GeoPoint{125002000, 773001000},
+                                     14.0f,
+                                     -118.0f,
+                                     0,
+                                     0));
+
+    SimulationBuilder builder;
+    builder.setConfig(cfg);
+
+    SimulationTestBase test(builder.build());
+    test.start();
+
+    const uint16_t src = kNodeBase;
+    const uint16_t dst = static_cast<uint16_t>(kNodeBase + 1);
+    constexpr size_t kMessageCount = 20;
+
+    for (size_t i = 0; i < kMessageCount; ++i) {
+        const std::vector<uint8_t> payload = {
+            0xE0,
+            static_cast<uint8_t>(i & 0xFF),
+        };
+
+        const int rc = test.sendFromDevice(src,
+                                           payload,
+                                           Priority::NORMAL,
+                                           PropagationMode::OMNI,
+                                           0,
+                                           0,
+                                           5000,
+                                           30);
+        expectEqInt(rc, static_cast<int>(NetworkError::Ok),
+                    "light-load congestion test send should succeed");
+        test.scenario().step(50);
+    }
+
+    expectTrue(test.waitForMessageCount(dst, kMessageCount, 3000, 20, 1),
+               "light-load utilization should stay below threshold and avoid congestion drops");
+
+    const SimulationMetricsSnapshot metrics = test.scenario().metrics();
+    expectEqSize(test.receivedCount(dst), kMessageCount,
+                 "light-load congestion configuration should keep all deliveries");
+    expectTrue(metrics.channel_utilization_pct < 99.0,
+               "light-load utilization should remain below congestion threshold");
+
+    test.stop();
 }
 
 void testLargeScaleBroadcastBurstNoLoss()
@@ -337,6 +535,12 @@ int main()
     failures += runTest("repeatability_snapshot_stable_across_runs",
                         testRepeatabilitySnapshotStableAcrossRuns);
     failures += runTest("hundred_node_step_budget", testHundredNodeStepBudget);
+    failures += runTest("stochastic_per_same_seed_is_repeatable",
+                        testStochasticPerSameSeedIsRepeatable);
+    failures += runTest("stochastic_per_different_seeds_diverge",
+                        testStochasticPerDifferentSeedsDiverge);
+    failures += runTest("congestion_threshold_prevents_drops_under_light_load",
+                        testCongestionThresholdPreventsDropsUnderLightLoad);
 
     if (failures == 0) {
         std::printf("All phase 5 simulation tests passed\n");

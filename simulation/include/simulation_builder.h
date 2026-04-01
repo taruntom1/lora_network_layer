@@ -9,6 +9,7 @@
 #include "config_loader.h"
 #include "simulation_clock.h"
 #include "simulation_config.h"
+#include "simulation_metrics.h"
 #include "simulated_link_layer.h"
 #include "simulated_location_provider.h"
 #include "simulated_network.h"
@@ -89,6 +90,11 @@ public:
 
     /** @brief Sorted list of node ids in this scenario. */
     std::vector<uint16_t> nodeIds() const;
+
+    /** @brief Read-only metrics snapshot for the current virtual time. */
+    SimulationMetricsSnapshot metrics() const;
+    /** @brief Reset scenario metrics counters at current virtual time. */
+    void resetMetrics();
 
 private:
     struct NodeRuntime;

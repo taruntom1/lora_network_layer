@@ -141,6 +141,36 @@ float parseFloat(const ParsedLine& line, const std::string& raw)
     return v;
 }
 
+bool parseBool(const ParsedLine& line, const std::string& raw)
+{
+    if (raw == "true" || raw == "True" || raw == "1") {
+        return true;
+    }
+
+    if (raw == "false" || raw == "False" || raw == "0") {
+        return false;
+    }
+
+    parseError(line.line_no, "invalid bool value '" + raw + "'");
+}
+
+SimulationRuntimeConfig::PerModel parsePerModel(const ParsedLine& line, const std::string& raw)
+{
+    if (raw == "disabled" || raw == "off") {
+        return SimulationRuntimeConfig::PerModel::Disabled;
+    }
+
+    if (raw == "threshold") {
+        return SimulationRuntimeConfig::PerModel::Threshold;
+    }
+
+    if (raw == "logistic") {
+        return SimulationRuntimeConfig::PerModel::Logistic;
+    }
+
+    parseError(line.line_no, "invalid per_model value '" + raw + "'");
+}
+
 template <typename TInt>
 TInt parseUnsigned(const ParsedLine& line, const std::string& raw, const char* label)
 {
@@ -211,6 +241,48 @@ void setRuntimeField(SimulationRuntimeConfig& runtime, const ParsedLine& line)
         runtime.carrier_freq_mhz = parseFloat(line, value);
     } else if (key == "start_time_s") {
         runtime.start_time_s = parseUnsigned<uint32_t>(line, value, "start_time_s");
+    } else if (key == "random_seed") {
+        runtime.random_seed = parseUnsigned<uint64_t>(line, value, "random_seed");
+    } else if (key == "compatibility_immediate_delivery") {
+        runtime.compatibility_immediate_delivery = parseBool(line, value);
+    } else if (key == "data_rate_bps") {
+        runtime.data_rate_bps = parseUnsigned<uint32_t>(line, value, "data_rate_bps");
+    } else if (key == "slot_time_us") {
+        runtime.slot_time_us = parseUnsigned<uint32_t>(line, value, "slot_time_us");
+    } else if (key == "difs_us") {
+        runtime.difs_us = parseUnsigned<uint32_t>(line, value, "difs_us");
+    } else if (key == "cw_min") {
+        runtime.cw_min = parseUnsigned<uint16_t>(line, value, "cw_min");
+    } else if (key == "cw_max") {
+        runtime.cw_max = parseUnsigned<uint16_t>(line, value, "cw_max");
+    } else if (key == "max_retries") {
+        runtime.max_retries = parseUnsigned<uint8_t>(line, value, "max_retries");
+    } else if (key == "fading_stddev_db") {
+        runtime.fading_stddev_db = parseFloat(line, value);
+    } else if (key == "noise_jitter_db") {
+        runtime.noise_jitter_db = parseFloat(line, value);
+    } else if (key == "per_model") {
+        runtime.per_model = parsePerModel(line, value);
+    } else if (key == "snr_threshold_db") {
+        runtime.snr_threshold_db = parseFloat(line, value);
+    } else if (key == "per_logistic_k") {
+        runtime.per_logistic_k = parseFloat(line, value);
+    } else if (key == "per_logistic_mid_db") {
+        runtime.per_logistic_mid_db = parseFloat(line, value);
+    } else if (key == "propagation_min_delay_us") {
+        runtime.propagation_min_delay_us =
+            parseUnsigned<uint32_t>(line, value, "propagation_min_delay_us");
+    } else if (key == "enable_collision_model") {
+        runtime.enable_collision_model = parseBool(line, value);
+    } else if (key == "enable_congestion_drops") {
+        runtime.enable_congestion_drops = parseBool(line, value);
+    } else if (key == "congestion_utilization_threshold_pct") {
+        runtime.congestion_utilization_threshold_pct = parseFloat(line, value);
+    } else if (key == "congestion_drop_probability") {
+        runtime.congestion_drop_probability = parseFloat(line, value);
+    } else if (key == "congestion_min_elapsed_us") {
+        runtime.congestion_min_elapsed_us =
+            parseUnsigned<uint32_t>(line, value, "congestion_min_elapsed_us");
     } else if (key == "duplicate_cache_size") {
         runtime.network_config.duplicate_cache_size =
             parseUnsigned<size_t>(line, value, "duplicate_cache_size");
